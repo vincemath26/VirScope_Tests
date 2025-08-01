@@ -1,5 +1,3 @@
-# Markdown syntax guide
-
 # Welcome to VirScope!
 
 Hi there and welcome to Vincent Marcus Bato Ramirez's 2025 Thesis Project!
