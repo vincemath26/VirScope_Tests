@@ -1,0 +1,22 @@
+{
+  "version": "1.2",
+  "dbname": "coxsackievirusB1_P08291_db",
+  "dbtype": "Protein",
+  "db-version": 5,
+  "description": "raw_data/coxsackievirusB1_P08291.fasta",
+  "number-of-letters": 2182,
+  "number-of-sequences": 1,
+  "last-updated": "2025-07-22T05:07:00",
+  "number-of-volumes": 1,
+  "bytes-total": 1002518,
+  "bytes-to-cache": 2332,
+  "files": [
+    "coxsackievirusB1_P08291_db.pdb",
+    "coxsackievirusB1_P08291_db.phr",
+    "coxsackievirusB1_P08291_db.pin",
+    "coxsackievirusB1_P08291_db.pot",
+    "coxsackievirusB1_P08291_db.psq",
+    "coxsackievirusB1_P08291_db.ptf",
+    "coxsackievirusB1_P08291_db.pto"
+  ]
+}
