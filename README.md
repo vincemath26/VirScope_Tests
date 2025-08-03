@@ -15,7 +15,7 @@ As supplied by my university, my thesis project revolves around:
 To further break down this project, essentially I am tasked with deconvoluting pre-processed VirScan output into easily-understandable content such as graphs and/or bioinformatic maps (antigen maps, heatmaps, etc) and be able to display these contents through a web-based approach (in which I have chosen to do a simple web-application).
 
 The main aims of the project are as follows:
-| Left columns  | Right columns |
+| Criteria  | Description |
 | ------------- |:-------------:|
 | Accessibility |Create a satisfactory web-application with good user interface (UI) and user experience (UX) design principles in order to create a product that is web-based and hence accessible to many bioinformaticians.|
 | Utility/usefulness|Improve the analysis of VirScan outputs by breaking down these pre-processed datasets and applying them to statistical methods as to turn them into more easily-understandable graphs; thus deconvoluting the whole process of generating a history of viral infections in individuals.|
