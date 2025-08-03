@@ -5,6 +5,7 @@ import Landing from './pages/Landing';
 import Register from './pages/Register';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import Visualisation from './pages/Visualisation';
 import Authenticated from './components/Authenticated'
 
 function App() {
@@ -38,6 +39,7 @@ function AppHeaders() {
         <Route element={<Authenticated />}>
           <Route path='/dashboard' element={<Dashboard />} />
         </Route>
+        <Route path='/visualise/:uploadId' element={<Visualisation />} />
       </Routes>
     </>
   )

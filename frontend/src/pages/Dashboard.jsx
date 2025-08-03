@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Create from '../components/Create';
 import axios from 'axios';
 
 function Dashboard() {
+  const navigate = useNavigate();
+
   const dashboardContainer = {
     marginTop: '2%',
     padding: '2rem',
@@ -87,6 +90,7 @@ function Dashboard() {
     boxShadow: '0px 2px 5px rgba(0, 0, 0, 0.1)',
     transition: 'transform 0.3s ease, box-shadow 0.3s ease',
     marginBottom: '1rem',
+    cursor: 'pointer',
   };
 
   const cardHover = {
@@ -180,7 +184,9 @@ function Dashboard() {
           Your Uploaded Files
         </h2>
         <div style={cardGrid}>
-          {virscanFiles.length > 0 ? (
+          {isLoading ? (
+            <p>Loading VirScan Files...</p>
+          ) : virscanFiles.length > 0 ? (
             virscanFiles.map((file, index) => (
               <div
                 key={file.upload_id}
@@ -190,15 +196,14 @@ function Dashboard() {
                 }}
                 onMouseEnter={() => setHoveredIndex(index)}
                 onMouseLeave={() => setHoveredIndex(null)}
+                onClick={() => navigate(`/visualise/${file.upload_id}`)}
               >
                 <h3 style={fileName}>{file.name}</h3>
-                <p style={fileDate}>
-                  {new Date(file.date_created).toLocaleString()}
-                </p>
+                <p style={fileDate}>{new Date(file.date_created).toLocaleString()}</p>
               </div>
             ))
           ) : (
-            <p>Loading VirScan Files...</p>
+            <p>No uploaded files found.</p>
           )}
         </div>
       </div>

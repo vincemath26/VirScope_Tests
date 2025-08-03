@@ -116,13 +116,16 @@ Python 3.13.5
 To setup Python, ensure that you have it installed. If you don't please install it from this link and select this installation location as your interpreter for your code base (like Visual Studio).
 * [Python Download](https://www.python.org/downloads/)
 
-After downloading, relaunch your codebase and ensure that Python is downloaded successfully into your system by using this command into your terminal `python --version`
+After downloading, relaunch your codebase and ensure that Python is downloaded successfully into your system by using this command into your terminal `python --version` or `py --version`
 
 Now that we have ensured you have Python installed, it is recommended that you work by a Python virtual environment to manage dependencies for this project. You can do this by doing the following commands into your terminal.
 
 ```
 # Note you only need to do this once
 python -m venv venv
+
+# If that didn't work try,
+py -m venv venv
 ```
 
 Then to launch your virtual environment, do the following command each time:
@@ -144,6 +147,12 @@ pip install -r requirements.txt
 
 ```
 
+To quit this virtual environment, please just do the following command on your terminal:
+
+```
+deactivate
+```
+
 ## Step 3: Setting up the Frontend
 
 Before proceeding with the steps below, please ensure that you are working with the frontend folder by doing the command `cd frontend` on your terminal (assuming that you went back to the main folder from the backend folder by using `cd ..`)
@@ -151,6 +160,9 @@ Before proceeding with the steps below, please ensure that you are working with 
 ## Running the frontend:
 
 All you need to do is to just type in this command in your terminal:
+
 ```
+npm install
+
 npm start
 ```
