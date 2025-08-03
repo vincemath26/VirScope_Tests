@@ -1,8 +1,8 @@
 from flask import Blueprint, request, jsonify, session
-import jwt
 from sqlalchemy.orm import Session as SqlAlchemySession
 from models.models import User
 from werkzeug.security import generate_password_hash, check_password_hash
+import jwt
 
 # Define Blueprint
 auth_bp = Blueprint('auth', __name__)

@@ -1,6 +1,7 @@
 import os
+import pandas as pd
 from datetime import datetime
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, abort, request, jsonify, current_app, send_file, jsonify
 from werkzeug.utils import secure_filename
 from utils.db import engine, Session  # import Session & engine from db.py
 from models.models import Upload  # make sure Upload is imported from models.models
@@ -74,6 +75,17 @@ def delete_upload(upload_id):
         session.commit()
 
     return jsonify({"message": "Upload deleted successfully"})
+
+@collection_bp.route('/uploads/csv/<int:upload_id>', methods=['GET'])
+def serve_csv(upload_id):
+    with Session() as session:
+        upload = session.get(Upload, upload_id)
+        if not upload:
+            return abort(404)
+        filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name)
+        if not os.path.exists(filepath):
+            return abort(404)
+        return send_file(filepath, mimetype='text/csv')
 
 # Admin related code - deleting all uploads
 @collection_bp.route('/delete-all-uploads', methods=['POST'])

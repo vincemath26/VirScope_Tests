@@ -1,11 +1,12 @@
 import subprocess
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import seaborn as sns
 import pandas as pd
 import numpy as np
 import io
-import re
 from flask import send_file
 
 def compute_rpk(df, abundance_col='abundance', sample_col='sample_id'):
