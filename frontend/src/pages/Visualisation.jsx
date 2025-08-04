@@ -46,7 +46,7 @@ function Visualisation() {
       setLoading(true);
       const response = await axios.get(endpoint, {
         params,
-        responseType: 'blob', // important to receive image as blob
+        responseType: 'blob',
       });
       const url = URL.createObjectURL(response.data);
       setGraphImageUrl(url);
@@ -71,6 +71,16 @@ function Visualisation() {
     fetchGraph();
   };
 
+  const handleDownload = () => {
+    if (!graphImageUrl) return;
+    const link = document.createElement('a');
+    link.href = graphImageUrl;
+    link.download = `${selectedGraph}_${uploadId}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleDelete = async () => {
     if (!window.confirm("Are you sure you want to delete this upload? This action cannot be undone.")) {
       return;
@@ -79,14 +89,53 @@ function Visualisation() {
     try {
       await axios.delete(`http://localhost:5000/upload/${uploadId}`);
       alert("Upload deleted successfully.");
-      navigate('/dashboard'); // Redirect after delete
+      navigate('/dashboard');
     } catch (error) {
       alert('Failed to delete upload: ' + (error.response?.data?.error || error.message));
       console.error(error);
     }
   };
 
+  const graphDescriptions = {
+    antigen_map: {
+      title: 'Antigen Map',
+      description: `
+        Please note that the methodology to develop this antigen map was taken from
+        Dr. Legana Fingerhut's R code. This antigen map helps visualise the differences
+        in reactivity (shown as RPK values) across peptide sequences that were aligned
+        to viral proteins using BLAST. We used a moving sum to aggregate the values
+        as to highlight the local regions of the polyprotein of the virus. Positive values 
+        represent cases which mean patients with Type 1 Diabetes (T1D) and negative values 
+        represent controls which mean matched non-T1D individuals. 
+
+        A peak may be an indication of a strong immune response, meaning more antibody 
+        recognition of viral protein segments which therefore exposes this viral history 
+        and when combined with the polyprotein plot above, showcases viral regions that 
+        may be involved in triggering or sustaining autoimmune reaction.
+      `.replace(/\n\s+/g, ' ').trim()
+    },
+    heatmap: {
+      title: 'Species Reactivity Heatmap',
+      description: `
+        This exploratory heatmap helps you visualise a species-level overview of the
+        read counts across all the samples provided within your dataset as to allow 
+        for a comparison of abundances (represented by rpk values) for the top N species.
+      `.replace(/\n\s+/g, ' ').trim()
+    },
+    barplot: {
+      title: 'Species Reactivity Stacked Barplot',
+      description: `
+        This exploratory barplot is similar to the heatmap exploratory graph in which
+        helps you visualise a species-level overview of the read counts across all the
+        samples provided within your dataset as to allow for a comparison of "contribution"
+        of each top N species across all samples.
+      `.replace(/\n\s+/g, ' ').trim()
+    },
+  };
+
   return (
+    // General div to ensure structure; keep everything
+    // straight in the middle.
     <div
       style={{
         paddingTop: '100px',
@@ -94,9 +143,9 @@ function Visualisation() {
         justifyContent: 'center',
       }}
     >
+      {/* Renders the buttons to delete data or go back to the dashboard */}
       <div style={{ width: '100%', maxWidth: '1000px', padding: '0 20px' }}>
         <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-          {/* Back button */}
           <button
             onClick={() => navigate('/dashboard')}
             style={{
@@ -112,7 +161,6 @@ function Visualisation() {
             ← Back to Dashboard
           </button>
 
-          {/* Delete button */}
           <button
             onClick={handleDelete}
             style={{
@@ -129,10 +177,11 @@ function Visualisation() {
           </button>
         </div>
 
+        {/* Use File Reader component to read and display csv */}
         <h2>CSV Preview for Upload ID: {uploadId}</h2>
         <FileReader uploadId={uploadId} />
 
-        {/* Graph selection buttons */}
+        {/* Renders the graph preset buttons */}
         <div style={{ marginTop: '30px', marginBottom: '10px' }}>
           {['antigen_map', 'heatmap', 'barplot'].map((type) => (
             <button
@@ -156,9 +205,9 @@ function Visualisation() {
           ))}
         </div>
 
-        {/* Input form for heatmap and barplot */}
+        {/* Renders the graph generation and download buttons */}
         {selectedGraph && (
-          <form onSubmit={handleSubmit} style={{ marginBottom: '20px' }}>
+          <form onSubmit={handleSubmit} style={{ marginBottom: '20px', display: 'flex', alignItems: 'center' }}>
             {showInput && (
               <label>
                 Enter number of top species:&nbsp;
@@ -172,12 +221,40 @@ function Visualisation() {
                 />
               </label>
             )}
-            <button type="submit" style={{ marginLeft: '10px' }}>
+            <button
+              type="submit"
+              style={{
+                marginLeft: '10px',
+                padding: '6px 12px',
+                cursor: 'pointer',
+                backgroundColor: '#2196f3',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+              }}
+            >
               Generate
+            </button>
+            <button
+              type="button"
+              onClick={handleDownload}
+              disabled={!graphImageUrl}
+              style={{
+                marginLeft: '10px',
+                padding: '6px 12px',
+                cursor: graphImageUrl ? 'pointer' : 'not-allowed',
+                backgroundColor: graphImageUrl ? '#2196f3' : '#ccc',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+              }}
+            >
+              Save PNG
             </button>
           </form>
         )}
 
+        {/* Renders the graph area */}
         <div
           style={{
             border: '2px solid #ddd',
@@ -208,6 +285,27 @@ function Visualisation() {
             </span>
           )}
         </div>
+
+        {/* Renders the graph descriptions */}
+        {selectedGraph && graphDescriptions[selectedGraph] && (
+          <div 
+            style={{ 
+              marginTop: '20px',
+              marginBottom: '40px',
+              width: '100%',
+              color: '#555',
+              lineHeight: '1.6',
+              whiteSpace: 'pre-line',
+            }}
+          >
+            <h3 style={{ marginBottom: '8px', color: '#333' }}>
+              {graphDescriptions[selectedGraph].title}
+            </h3>
+            <p style={{ color: '#555', lineHeight: '1.6', whiteSpace: 'pre-line' }}>
+              {graphDescriptions[selectedGraph].description.trim()}
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

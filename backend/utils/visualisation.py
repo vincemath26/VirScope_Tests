@@ -14,6 +14,10 @@ def compute_rpk(df, abundance_col='abundance', sample_col='sample_id'):
     df['rpk'] = df.groupby(sample_col)[abundance_col].transform(lambda x: x / x.sum() * 1e5)
     return df
 
+def normalize_coordinates(df):
+    df['start'], df['end'] = np.minimum(df['start'], df['end']), np.maximum(df['start'], df['end'])
+    return df
+
 def plot_species_rpk_heatmap(df, top_n_species=20, output_path=None):
     # Compute rpk
     df = compute_rpk(df)
@@ -169,16 +173,13 @@ def read_blast(filepath):
         "mismatch", "gapopen", "qstart", "qend", "sstart", "send",
         "qseq", "sseq", "ppos", "stitle", "frames"
     ]
-
     try:
         df = pd.read_csv(filepath, sep="\t", header=None, names=columns)
     except Exception as e:
         raise ValueError(f"Failed to read BLAST file: {e}")
-
-    # Optionally, drop duplicates
     df = df.drop_duplicates()
-
-    return df
+    df = df.rename(columns={'sstart': 'start', 'send': 'end', 'qaccver': 'seqid'})
+    return normalize_coordinates(df)
 
 # Translated Legana's R Code.
 # I don't know if I actually did this correctly.
@@ -211,7 +212,7 @@ def calculate_mean_rpk_difference(df, blast_df, sample_id_col='sample_id', condi
     mean_rpk_cc = mean_rpk_cc[(mean_rpk_cc['mean_rpk_per_pepCase'] != 0) | (mean_rpk_cc['mean_rpk_per_pepControl'] != 0)]
 
     # Join with BLAST data on peptide ID (qaccver in blast)
-    merged = blast_df.merge(mean_rpk_cc, left_on='qaccver', right_on=pep_id_col, how='left')
+    merged = blast_df.merge(mean_rpk_cc, left_on='seqid', right_on=pep_id_col, how='left')
 
     # Calculate difference
     merged['mean_rpk_difference'] = merged['mean_rpk_per_pepCase'] - merged['mean_rpk_per_pepControl']
@@ -219,12 +220,8 @@ def calculate_mean_rpk_difference(df, blast_df, sample_id_col='sample_id', condi
     # Drop rows with NA differences
     merged = merged.dropna(subset=['mean_rpk_difference'])
 
-    # Final columns
-    return merged[['qaccver', 'sstart', 'send', 'mean_rpk_per_pepCase', 'mean_rpk_per_pepControl', 'mean_rpk_difference', 'saccver']].rename(columns={
-        'qaccver': 'seqid',
-        'sstart': 'start',
-        'send': 'end'
-    })
+    # Final columns (already renamed in read_blast)
+    return merged[['seqid', 'start', 'end', 'mean_rpk_per_pepCase', 'mean_rpk_per_pepControl', 'mean_rpk_difference', 'saccver']]
 
 # Translated Legana's R Code.
 # I had to look at my notes from ENGG1811 because
@@ -260,33 +257,32 @@ def plot_antigen_map(moving_sum_df, ev_df=None, output_path=None):
     if not required_columns.issubset(moving_sum_df.columns):
         raise ValueError("DataFrame missing required columns for plotting")
 
-    # Drop duplicates per window to avoid stacking
+    # Prepare data
     plot_df = moving_sum_df.drop_duplicates(subset=['window_start']).copy()
-
-    # Compute midpoint for bar positions
     plot_df['x_mid'] = (plot_df['window_start'] + plot_df['window_end']) / 2
+    plot_df['Case'] = plot_df['moving_sum'].clip(lower=0)
+    plot_df['Control'] = plot_df['moving_sum'].clip(upper=0)
 
-    # Assign condition based on sign of moving sum
-    plot_df['Condition'] = np.where(plot_df['moving_sum'] > 0, 'Case', 'Control')
+    # True x-axis range from full window
+    x_min = plot_df['window_start'].min()
+    x_max = plot_df['window_end'].max()
+    x_full = np.arange(x_min, x_max + 1)
 
-    # Define consistent colors to match original R style
-    condition_colors = {
-        'Case': '#d73027',
-        'Control': '#4575b4'
-    }
+    # Integer midpoints for plotting fill
+    x_mid_int = plot_df['x_mid'].round().astype(int)
 
-    # Prepare EV plot range
-    ev_start = plot_df['window_start'].min()
-    ev_end = plot_df['window_end'].max()
+    # Fill-between Series (all 0 initially)
+    case_series = pd.Series(0, index=x_full)
+    ctrl_series = pd.Series(0, index=x_full)
 
-    # Plot setup
-    fig, (ax1, ax2) = plt.subplots(
-        nrows=2,
-        figsize=(16, 10),
-        gridspec_kw={'height_ratios': [1, 4]}
-    )
+    # Assign case/control values at integer midpoints
+    case_series.loc[x_mid_int] = plot_df['Case'].values.astype('int64')
+    ctrl_series.loc[x_mid_int] = plot_df['Control'].values.astype('int64')
 
-    # --- EV Layout (top) ---
+    # Setup figure
+    fig, (ax1, ax2) = plt.subplots(nrows=2, figsize=(16, 10), gridspec_kw={'height_ratios': [1, 4]})
+
+    # --- EV Layout (top bar) ---
     if ev_df is not None and not ev_df.empty:
         protein_colours = {
             "VP4": "#428984", "VP2": "#6FC0EE", "VP3": "#26DED8E6", "VP1": "#C578E6",
@@ -310,48 +306,42 @@ def plot_antigen_map(moving_sum_df, ev_df=None, output_path=None):
                 family='Verdana'
             )
 
-        all_starts = ev_df["start"].tolist()
-        all_ends = ev_df["end"].tolist()
-
-        for x in all_starts + all_ends:
-            ax1.plot([x, x], [0, 0.1], color="black", linewidth=0.2)
-
-        ax1.hlines([0, 0.1], ev_start, ev_end, colors="black", linewidth=0.5)
-        ax1.text(ev_start - 5, 0.05, "5'", ha='right', va='center', fontsize=8)
-        ax1.text(ev_end + 5, 0.05, "3'", ha='left', va='center', fontsize=8)
-        ax1.set_xlim(ev_start - 10, ev_end + 10)
+        ax1.set_xlim(x_min - 5, x_max + 5)
         ax1.set_ylim(-0.05, 0.15)
         ax1.axis("off")
+
+        all_starts = ev_df["start"].tolist()
+        all_ends = ev_df["end"].tolist()
+        for x in all_starts + all_ends:
+            ax1.plot([x, x], [0, 0.1], color="black", linewidth=0.2)
+        ax1.hlines([0, 0.1], x_min, x_max, colors="black", linewidth=0.5)
+        ax1.text(x_min - 7, 0.05, "5'", ha='right', va='center', fontsize=8)
+        ax1.text(x_max + 7, 0.05, "3'", ha='left', va='center', fontsize=8)
     else:
         ax1.axis("off")
 
-    # --- Antigen Map barplot (bottom) ---
-    sns.barplot(
-        data=plot_df,
-        x='x_mid',
-        y='moving_sum',
-        hue='Condition',
-        palette=condition_colors,
-        dodge=False,
-        ax=ax2
-    )
+    # --- Antigen Map (bottom) ---
+    ax2.fill_between(case_series.index, case_series.values, color='#d73027', label='Case')
+    ax2.fill_between(ctrl_series.index, ctrl_series.values, color='#4575b4', label='Control')
+    ax2.axhline(0, color='black', linewidth=0.5)
 
+    ax2.set_xlim(x_min - 5, x_max + 5)
     ax2.set_title("Antigen Map: Moving Sum of RPK Differences", fontsize=16)
     ax2.set_xlabel("Position in sequence (amino acids)", fontsize=14)
     ax2.set_ylabel("Moving Sum", fontsize=14)
-    ax2.legend(title='', loc='upper right')
+    ax2.legend(loc='upper right')
     ax2.grid(False)
 
-    plt.tight_layout()
+    plt.subplots_adjust(hspace=0.1)
 
-    # Save or return as file
+    # Save or return
     if output_path:
-        plt.savefig(output_path)
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
         plt.close()
         return send_file(output_path, mimetype='image/png', as_attachment=False, download_name='antigen_map_cleaned.png')
 
     buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=300)
+    plt.savefig(buf, format='png', dpi=300, bbox_inches='tight')
     plt.close()
     buf.seek(0)
     return send_file(buf, mimetype="image/png")
