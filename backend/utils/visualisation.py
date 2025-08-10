@@ -26,7 +26,7 @@ def plot_species_rpk_heatmap(df, top_n_species=20, output_path=None):
     df = df.dropna(subset=['taxon_species', 'sample_id', 'rpk'])
 
     # Group and pivot
-    grouped = df.groupby(['taxon_species', 'sample_id'])['rpk'].sum().reset_index()
+    grouped = df.groupby(['taxon_species', 'sample_id'])['rpk'].mean().reset_index()
     heatmap_data = grouped.pivot(index='taxon_species', columns='sample_id', values='rpk').fillna(0)
 
     # Top species
