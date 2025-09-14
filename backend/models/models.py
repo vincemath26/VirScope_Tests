@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
 from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
 
@@ -22,3 +22,15 @@ class Upload(Base):
     user_id = Column(Integer, ForeignKey('users.user_id'))
     user = relationship("User", back_populates="uploads")
 
+class GraphText(Base):
+    __tablename__ = 'upload_graph_texts'
+    id = Column(Integer, primary_key=True)
+    upload_id = Column(Integer, ForeignKey('uploads.upload_id'), nullable=False)
+    graph_type = Column(String(50), nullable=False)  # 'heatmap', 'barplot', 'antigen_map'
+    text = Column(Text, nullable=True)  # allow empty initially
+    date_created = Column(DateTime, default=datetime.utcnow)
+    date_modified = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    upload = relationship("Upload", back_populates="graph_texts")
+
+Upload.graph_texts = relationship("GraphText", back_populates="upload", cascade="all, delete-orphan")

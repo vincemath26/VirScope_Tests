@@ -17,6 +17,7 @@ function Visualisation() {
   const [showDeleteWarning, setShowDeleteWarning] = useState(false);
   const backendBaseURL = 'http://localhost:5000';
   const showInput = selectedGraph === 'heatmap' || selectedGraph === 'barplot';
+  const [graphText, setGraphText] = useState('')
 
   // --- Fetch filename for CSV preview title ---
   useEffect(() => {
@@ -36,6 +37,7 @@ function Visualisation() {
     setSelectedGraph(type);
     setInteractiveData(null); // Clear previous graph
     setTopN(''); // Reset topN input
+    fetchGraphText(type); // fetch existing text for this graph
   };
 
   // --- Fetch Graph Data ---
@@ -71,6 +73,27 @@ function Visualisation() {
       toast.error('Error fetching graph: ' + (err.response?.data?.error || err.message));
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Graph text
+  const fetchGraphText = async (graphType) => {
+    try {
+      const response = await axios.get(`${backendBaseURL}/upload/${uploadId}/graph_text/${graphType}`);
+      setGraphText(response.data.text || '');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to fetch saved text.');
+    }
+  };
+
+  const saveGraphText = async () => {
+    try {
+      await axios.post(`${backendBaseURL}/upload/${uploadId}/graph_text/${selectedGraph}`, { text: graphText });
+      toast.success('Text saved successfully');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to save text.');
     }
   };
 
@@ -248,6 +271,20 @@ function Visualisation() {
           </button>
 
           <button
+            onClick={() => console.log('Generate PDF clicked!')}
+            style={{
+              backgroundColor: '#4caf50',
+              color: 'white',
+              padding: '8px 16px',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+            }}
+          >
+            Generate PDF
+          </button>
+
+          <button
             onClick={() => setShowDeleteWarning(true)}
             style={{
               backgroundColor: '#f44336',
@@ -339,20 +376,40 @@ function Visualisation() {
           {loading ? <span style={{ color: '#4caf50', fontSize: '18px' }}>Loading...</span> : renderPlot()}
         </div>
 
-        {/* Textbox */}
-        <textarea
-          placeholder="Prepare your text here..."
-          style={{
-            width: '100%',
-            boxSizing: 'border-box', // <-- add this
-            minHeight: '150px',
-            padding: '10px',
-            borderRadius: '5px',
-            border: '1px solid #ccc',
-            resize: 'vertical',
-            marginBottom: '20px',
-          }}
-        />
+        {/* Graph Textbox and Save (only show if a graph is selected) */}
+        {selectedGraph && (
+          <>
+            <textarea
+              value={graphText}
+              onChange={(e) => setGraphText(e.target.value)}
+              placeholder="Prepare your text here..."
+              style={{
+                width: '100%',
+                minHeight: '150px',
+                padding: '10px',
+                borderRadius: '5px',
+                border: '1px solid #ccc',
+                resize: 'vertical',
+                marginBottom: '10px',
+              }}
+            />
+            <button
+              onClick={saveGraphText}
+              disabled={loading}
+              style={{
+                padding: '6px 12px',
+                cursor: 'pointer',
+                backgroundColor: '#ff9800',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                marginBottom: '20px',
+              }}
+            >
+              Save Text
+            </button>
+          </>
+        )}
 
         {/* Delete Warning */}
         <DeleteWarning
