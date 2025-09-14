@@ -1,6 +1,6 @@
 import React from 'react';
 
-function DeleteWarning({ open, onCancel, onConfirm, title, message }) {
+export default function DeleteWarning({ open, onConfirm, onCancel, title, message }) {
   if (!open) return null;
 
   return (
@@ -9,37 +9,36 @@ function DeleteWarning({ open, onCancel, onConfirm, title, message }) {
         position: 'fixed',
         top: 0,
         left: 0,
-        width: '100vw',
-        height: '100vh',
+        width: '100%',
+        height: '100%',
         backgroundColor: 'rgba(0,0,0,0.5)',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        zIndex: 1000,
+        zIndex: 9999
       }}
     >
       <div
         style={{
           backgroundColor: 'white',
-          padding: '2rem',
-          borderRadius: '8px',
-          maxWidth: '400px',
-          width: '90%',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-          textAlign: 'center',
+          padding: '30px',
+          borderRadius: '16px',
+          width: '450px',   // bigger popup
+          maxWidth: '90%',
+          boxShadow: '0 8px 20px rgba(0,0,0,0.3)'
         }}
       >
-        <h2 style={{ marginBottom: '1rem' }}>{title || 'Confirm Delete'}</h2>
-        <p style={{ marginBottom: '1.5rem' }}>{message || 'Are you sure you want to delete this?'}</p>
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+        <h2 style={{ marginTop: 0, marginBottom: '15px' }}>{title}</h2>
+        <p style={{ marginBottom: '25px' }}>{message}</p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
           <button
             onClick={onCancel}
             style={{
-              padding: '0.5rem 1rem',
-              borderRadius: '5px',
-              border: '1px solid #888',
+              padding: '10px 20px',
+              borderRadius: '12px',
+              border: '1px solid #ccc',
               backgroundColor: '#f0f0f0',
-              cursor: 'pointer',
+              cursor: 'pointer'
             }}
           >
             Cancel
@@ -47,12 +46,13 @@ function DeleteWarning({ open, onCancel, onConfirm, title, message }) {
           <button
             onClick={onConfirm}
             style={{
-              padding: '0.5rem 1rem',
-              borderRadius: '5px',
+              padding: '10px 20px',
+              borderRadius: '12px',
               border: 'none',
               backgroundColor: '#f44336',
               color: 'white',
               cursor: 'pointer',
+              fontWeight: 'bold'
             }}
           >
             Delete
@@ -62,5 +62,3 @@ function DeleteWarning({ open, onCancel, onConfirm, title, message }) {
     </div>
   );
 }
-
-export default DeleteWarning;

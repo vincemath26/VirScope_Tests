@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import FileReader from '../components/FileReader';
-import DeleteWarning from '../components/DeleteWarning'; // import at top
+import DeleteWarning from '../components/DeleteWarning';
+import { toast } from 'react-toastify';
 
 function Visualisation() {
   const { uploadId } = useParams();
