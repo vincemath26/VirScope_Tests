@@ -110,3 +110,31 @@ def delete_all_uploads():
         session.commit()
 
     return jsonify({'message': 'All uploads and their files have been deleted.'}), 200
+
+@collection_bp.route('/search/<int:user_id>', methods=['GET'])
+def search_uploads(user_id):
+    query = request.args.get('q', '').strip()
+    if not query:
+        return jsonify({"error": "Search query is required"}), 400
+
+    with Session() as session:
+        uploads = (
+            session.query(Upload)
+            .filter(
+                Upload.user_id == user_id,
+                Upload.name.ilike(f"%{query}%")  # case-insensitive match
+            )
+            .all()
+        )
+
+        results = [
+            {
+                "upload_id": upload.upload_id,
+                "name": upload.name,
+                "date_created": upload.date_created.isoformat(),
+                "date_modified": upload.date_modified.isoformat()
+            }
+            for upload in uploads
+        ]
+
+    return jsonify(results)
