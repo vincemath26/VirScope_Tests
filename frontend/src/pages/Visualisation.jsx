@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import FileReader from '../components/FileReader';
+import DeleteWarning from '../components/DeleteWarning'; // import at top
 
 function Visualisation() {
   const { uploadId } = useParams();
   const navigate = useNavigate();
-
   const [selectedGraph, setSelectedGraph] = useState('');
   const [topN, setTopN] = useState('');
   const [graphImageUrl, setGraphImageUrl] = useState(null);
@@ -14,6 +14,7 @@ function Visualisation() {
   const [loading, setLoading] = useState(false);
   const showInput = selectedGraph === 'heatmap' || selectedGraph === 'barplot';
   const backendBaseURL = 'http://localhost:5000';
+  const [showDeleteWarning, setShowDeleteWarning] = useState(false);
 
   useEffect(() => {
     if (prevUrl && prevUrl !== graphImageUrl) {
@@ -82,17 +83,15 @@ function Visualisation() {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm("Are you sure you want to delete this upload? This action cannot be undone.")) {
-      return;
-    }
-
     try {
       await axios.delete(`http://localhost:5000/upload/${uploadId}`);
-      alert("Upload deleted successfully.");
+      toast.success("Upload deleted successfully!");
       navigate('/dashboard');
     } catch (error) {
-      alert('Failed to delete upload: ' + (error.response?.data?.error || error.message));
+      toast.error('Failed to delete upload: ' + (error.response?.data?.error || error.message));
       console.error(error);
+    } finally {
+      setShowDeleteWarning(false);
     }
   };
 
@@ -162,7 +161,7 @@ function Visualisation() {
           </button>
 
           <button
-            onClick={handleDelete}
+            onClick={() => setShowDeleteWarning(true)}
             style={{
               padding: '8px 16px',
               cursor: 'pointer',
@@ -176,6 +175,14 @@ function Visualisation() {
             Delete Upload
           </button>
         </div>
+        
+        <DeleteWarning
+          open={showDeleteWarning}
+          onCancel={() => setShowDeleteWarning(false)}
+          onConfirm={handleDelete}
+          title="Delete Upload"
+          message="Are you sure you want to delete this upload? This action cannot be undone."
+        />
 
         {/* Use File Reader component to read and display csv */}
         <h2>CSV Preview for Upload ID: {uploadId}</h2>

@@ -6,272 +6,202 @@ import axios from 'axios';
 function Dashboard() {
   const navigate = useNavigate();
 
-  const dashboardContainer = {
-    marginTop: '2%',
-    padding: '2rem',
-    height: 'auto',
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'flex-start',
-  };
+  const dashboardContainer = { marginTop: '2%', padding: '2rem', display: 'flex', flexDirection: 'column' };
+  const upperRow = { display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', marginBottom: '2rem' };
+  const dashboardTitle = { margin: 0, padding: '0.5rem', fontFamily: 'Poppins, sans-serif', color: '#73D798', fontSize: '4rem', width: '70%', textAlign: 'center' };
+  const line = { width: '70%', border: '0', borderTop: '2px solid #333333', margin: '1rem 0' };
 
-  const upperRow = {
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: '2rem',
-  };
-
-  const dashboardTitle = {
-    margin: 0,
-    padding: '0.5rem',
-    fontFamily: 'Poppins, sans-serif',
-    color: '#73D798',
-    fontSize: '4rem',
-    width: '70%',
-    textAlign: 'center',
-  };
-
-  const line = {
-    width: '70%',
-    border: '0',
-    borderTop: '2px solid #333333',
-    margin: '1rem 0',
-  };
-
-  // Button base style
   const button = {
-    color: '#000000',
+    color: '#000',
     height: '40px',
     borderStyle: 'solid',
     borderColor: '#73D798',
     borderWidth: '3px',
     borderRadius: '20px',
     backgroundColor: '#ffffff',
-    boxSizing: 'border-box',
     margin: '0',
     padding: '0 1rem',
     transition: 'all 0.3s ease',
-    cursor: 'pointer',
+    cursor: 'pointer'
   };
+  const buttonHover = { ...button, backgroundColor: '#73D798', color: '#fff' };
+  const buttonClick = { ...button, transform: 'scale(0.95)' };
 
-  const buttonHover = {
-    ...button,
-    backgroundColor: '#73D798',
-    color: '#ffffff',
-  };
-
+  const [isClicked, setIsClicked] = useState(false);
   const [isHoveredUpload, setIsHoveredUpload] = useState(false);
   const [isHoveredSearch, setIsHoveredSearch] = useState(false);
 
-  const buttonStyleUpload = () => (isHoveredUpload ? buttonHover : button);
-  const buttonStyleSearch = () => (isHoveredSearch ? buttonHover : button);
+  const buttonStyle = (buttonType) => {
+    if (isClicked === buttonType) return buttonClick;
+    if (buttonType === 'upload' && isHoveredUpload) return buttonHover;
+    if (buttonType === 'search' && isHoveredSearch) return buttonHover;
+    return button;
+  };
 
   const [isCreateVisible, setIsCreateVisible] = useState(false);
   const openPopup = () => setIsCreateVisible(true);
   const closePopup = () => setIsCreateVisible(false);
 
-  const card = {
-    border: '1px solid #dddddd',
-    borderRadius: '8px',
-    padding: '1rem',
-    width: 'calc(15% - 2rem)',
-    minWidth: '120px',
-    height: '100px',
-    textAlign: 'center',
-    boxShadow: '0px 2px 5px rgba(0, 0, 0, 0.1)',
-    transition: 'transform 0.3s ease, box-shadow 0.3s ease',
-    marginBottom: '1rem',
-    cursor: 'pointer',
-  };
-
-  const cardHover = {
-    transform: 'scale(1.05)',
-    boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.2)',
-  };
-
-  const cardGrid = {
-    display: 'flex',
-    gap: '15px',
-    flexWrap: 'wrap',
-  };
-
-  const fileName = {
-    fontWeight: 'bold',
-    fontSize: '1rem',
-  };
-
-  const fileDate = {
-    fontSize: '0.9rem',
-    color: '#666',
-  };
-
-  const popupContainer = {
-    position: 'fixed',
-    top: '50%',
-    left: '50%',
-    transform: 'translate(-50%, -50%)',
-    padding: '2rem',
-    width: '100%',
-    height: '100%',
-    textAlign: 'center',
-    zIndex: 1000,
-    backgroundColor: '#ffffff',
-    borderRadius: '10px',
-    boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.2)',
-    display: isCreateVisible ? 'block' : 'none',
-  };
-
   const [virscanFiles, setVirscanFiles] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hoveredIndex, setHoveredIndex] = useState(null);
 
-  // Search states
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+  const [newName, setNewName] = useState("");
 
-  useEffect(() => {
+  // Fetch files for user
+  const fetchFiles = (query = "") => {
     const token = localStorage.getItem('token');
     const userId = localStorage.getItem('user_id');
 
-    if (!userId) {
-      console.error('No user ID found in localStorage');
-      return;
-    }
-
-    axios
-      .get(`http://localhost:5000/uploads/${userId}`, {
-        headers: { Authorization: `Bearer ${token}` },
+    axios.get(`http://localhost:5000/uploads/${userId}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(response => {
+        let files = response.data;
+        if (query.trim()) files = files.filter(file => file.name.toLowerCase().includes(query.toLowerCase()));
+        setVirscanFiles(files);
       })
-      .then((response) => {
-        setVirscanFiles(response.data);
-      })
-      .catch((error) => {
-        console.error('Error fetching VirScan files:', error);
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
-  }, []);
-
-  const handleNewVirScan = (newFile) => {
-    setVirscanFiles((prevFiles) => [...prevFiles, newFile]);
+      .catch(console.error)
+      .finally(() => setIsLoading(false));
   };
 
-  const handleSearch = () => {
-    const token = localStorage.getItem('token');
-    const userId = localStorage.getItem('user_id');
+  useEffect(() => { fetchFiles(); }, []);
 
-    if (!userId) return;
+  const handleSearch = () => { fetchFiles(searchQuery); };
 
-    if (!searchQuery.trim()) {
-      // Empty search: show all files
-      setSearchResults([]);
-      return;
-    }
+  const handleNewVirScan = (newFile) => setVirscanFiles(prev => [...prev, newFile]);
 
-    axios
-      .get(`http://localhost:5000/search/${userId}?q=${searchQuery}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      .then((response) => {
-        setSearchResults(response.data);
-      })
-      .catch((error) => {
-        console.error('Search error:', error);
-      });
+  const renameFile = (upload_id) => {
+    const token = localStorage.getItem("token");
+    if (!newName.trim()) { setEditingId(null); return; }
+
+    axios.post(
+      `http://localhost:5000/upload/${upload_id}/rename`,
+      { new_name: newName },  // pass just base name
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+    .then(res => {
+      setVirscanFiles(prev => prev.map(f =>
+        f.upload_id === upload_id ? { ...f, name: res.data.new_name } : f
+      ));
+      setEditingId(null);
+    })
+    .catch(err => {
+      console.error("Rename failed:", err);
+      setEditingId(null);
+    });
   };
 
-  const filesToDisplay =
-    searchResults.length > 0 || searchQuery.trim().length > 0
-      ? searchResults
-      : virscanFiles;
+  // Card styles
+  const card = {
+    border: '1px solid #ddd',
+    borderRadius: '12px',
+    padding: '1rem',
+    flex: '1 1 150px',
+    maxWidth: '200px',
+    textAlign: 'center',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+    marginBottom: '1rem',
+    cursor: 'pointer',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden'
+  };
+  const cardHover = { transform: 'scale(1.05)', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' };
+  const fileName = { fontWeight: 'bold', fontSize: '1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' };
+  const fileDate = { fontSize: '0.9rem', color: '#666' };
+  const cardGrid = { display: 'flex', gap: '15px', flexWrap: 'wrap' };
 
   return (
     <div style={dashboardContainer}>
       <div style={upperRow}>
         <h1 style={dashboardTitle}>Welcome to VirScan! What do you want to analyse?</h1>
         <hr style={line} />
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', width: '70%' }}>
+          <input
+            type="text"
+            placeholder="Search files..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              flexGrow: 2,
+              minWidth: '150px',
+              padding: '0.5rem',
+              borderRadius: '20px',
+              border: '3px solid #73D798',
+              fontSize: '1rem'
+            }}
+          />
+          <button
+            style={buttonStyle('search')}
+            onClick={handleSearch}
+            onMouseEnter={() => setIsHoveredSearch(true)}
+            onMouseLeave={() => setIsHoveredSearch(false)}
+          >
+            Search
+          </button>
+          <button
+            style={buttonStyle('upload')}
+            onClick={openPopup}
+            onMouseEnter={() => setIsHoveredUpload(true)}
+            onMouseLeave={() => setIsHoveredUpload(false)}
+          >
+            New Analysis
+          </button>
+        </div>
       </div>
 
-      {/* Modern search + upload row */}
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          gap: "1rem",
-          marginBottom: "2rem",
-        }}
-      >
-        <input
-          type="text"
-          placeholder="Search files..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          style={{
-            padding: "0.5rem 1rem",
-            borderRadius: "20px",
-            border: `3px solid #73D798`,
-            fontSize: "1rem",
-            width: "250px",
-            outline: "none",
-            boxSizing: "border-box",
-            flexGrow: 1,
-            minWidth: "150px",
-          }}
-        />
-
-        <button
-          style={{ ...button, width: "90px", fontSize: "1rem" }}
-          onMouseEnter={() => setIsHoveredSearch(true)}
-          onMouseLeave={() => setIsHoveredSearch(false)}
-          onClick={handleSearch}
-        >
-          Search
-        </button>
-
-        <button
-          style={{ ...button, width: "140px", fontSize: "1rem" }}
-          onMouseEnter={() => setIsHoveredUpload(true)}
-          onMouseLeave={() => setIsHoveredUpload(false)}
-          onClick={openPopup}
-        >
-          New Analysis
-        </button>
-      </div>
-
-      <div>
-        <h2 style={{ fontFamily: 'Poppins, sans-serif', marginBottom: '1rem' }}>
-          Your Uploaded Files
-        </h2>
+      <div style={{ marginTop: '2rem' }}>
+        <h2 style={{ fontFamily: 'Poppins, sans-serif', marginBottom: '1rem' }}>Your Uploaded Files</h2>
         <div style={cardGrid}>
-          {isLoading ? (
-            <p>Loading VirScan Files...</p>
-          ) : filesToDisplay.length > 0 ? (
-            filesToDisplay.map((file, index) => (
+          {isLoading ? <p>Loading VirScan Files...</p> :
+            virscanFiles.length > 0 ? virscanFiles.map((file, index) => (
               <div
                 key={file.upload_id}
-                style={{
-                  ...card,
-                  ...(hoveredIndex === index ? cardHover : {}),
-                }}
+                title={file.name}
+                style={{ ...card, ...(hoveredIndex === index ? cardHover : {}) }}
                 onMouseEnter={() => setHoveredIndex(index)}
                 onMouseLeave={() => setHoveredIndex(null)}
                 onClick={() => navigate(`/visualise/${file.upload_id}`)}
               >
-                <h3 style={fileName}>{file.name}</h3>
+                {editingId === file.upload_id ? (
+                  <input
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    onBlur={() => renameFile(file.upload_id)}
+                    onKeyDown={(e) => { if(e.key === 'Enter') renameFile(file.upload_id) }}
+                    style={{
+                      width: '90%',
+                      padding: '0.3rem',
+                      borderRadius: '10px',
+                      border: '2px solid #73D798',
+                      fontSize: '0.9rem'
+                    }}
+                    autoFocus
+                  />
+                ) : (
+                  <h3
+                    style={fileName}
+                    onDoubleClick={() => {
+                      setEditingId(file.upload_id);
+                      // remove extension for editing input
+                      setNewName(file.name.replace(/\.[^/.]+$/, ""));
+                    }}
+                  >
+                    {file.name}
+                  </h3>
+                )}
                 <p style={fileDate}>{new Date(file.date_created).toLocaleString()}</p>
               </div>
-            ))
-          ) : (
-            <p>No uploaded files found.</p>
-          )}
+            )) : <p>No uploaded files found.</p>
+          }
         </div>
       </div>
 
-      <div style={popupContainer}>
+      <div style={{ display: isCreateVisible ? 'block' : 'none' }}>
         <Create onClose={closePopup} onCreate={handleNewVirScan} />
       </div>
     </div>

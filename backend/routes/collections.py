@@ -1,10 +1,10 @@
 import os
 import pandas as pd
 from datetime import datetime
-from flask import Blueprint, abort, request, jsonify, current_app, send_file, jsonify
+from flask import Blueprint, abort, request, jsonify, current_app, send_file
 from werkzeug.utils import secure_filename
-from utils.db import engine, Session  # import Session & engine from db.py
-from models.models import Upload  # make sure Upload is imported from models.models
+from utils.db import engine, Session
+from models.models import Upload
 
 collection_bp = Blueprint('collection', __name__)
 
@@ -15,7 +15,6 @@ def allowed_file(filename):
 
 @collection_bp.route('/upload', methods=['POST'])
 def upload_file():
-    # Get user_id from form data (multipart/form-data)
     user_id = request.form.get('user_id')
     if not user_id:
         return jsonify({"error": "user_id is required"}), 400
@@ -24,23 +23,28 @@ def upload_file():
         return jsonify({"error": "No file part in the request"}), 400
 
     file = request.files['file']
-
     if file.filename == '':
         return jsonify({"error": "No file selected"}), 400
 
     if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
+        # Handle custom name
+        custom_name = request.form.get('custom_name', file.filename)
+        # Ensure .csv extension
+        name_with_ext = secure_filename(custom_name)
+        if not name_with_ext.lower().endswith('.csv'):
+            name_with_ext += '.csv'
 
-        # Save the file to disk
+        filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], name_with_ext)
+
+        # Save file to disk
         file.save(filepath)
 
-        # Save upload info to database
+        # Save to DB
         with Session() as session:
-            upload = Upload(name=filename, user_id=int(user_id))
+            upload = Upload(name=name_with_ext, user_id=int(user_id))
             session.add(upload)
             session.commit()
-            upload_id = upload.upload_id  # Capture before session closes
+            upload_id = upload.upload_id
 
         return jsonify({"message": "File uploaded successfully", "upload_id": upload_id}), 201
 
@@ -59,6 +63,37 @@ def list_uploads(user_id):
             } for upload in uploads
         ]
     return jsonify(uploads_data)
+
+@collection_bp.route('/upload/<int:upload_id>/rename', methods=['POST'])
+def rename_upload(upload_id):
+    new_name = request.json.get("new_name")
+    if not new_name:
+        return jsonify({"error": "New name is required"}), 400
+
+    with Session() as session:
+        upload = session.get(Upload, upload_id)
+        if not upload:
+            return jsonify({"error": "Upload not found"}), 404
+
+        # Keep original extension
+        ext = os.path.splitext(upload.name)[1]
+        safe_name = secure_filename(new_name + ext)
+
+        old_filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name)
+        new_filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], safe_name)
+
+        if not os.path.exists(old_filepath):
+            return jsonify({"error": f"Original file not found: {old_filepath}"}), 404
+
+        try:
+            os.rename(old_filepath, new_filepath)
+        except Exception as e:
+            return jsonify({"error": f"Failed to rename file: {e}"}), 500
+
+        upload.name = safe_name
+        session.commit()
+
+    return jsonify({"message": "File renamed successfully", "new_name": safe_name})
 
 @collection_bp.route('/upload/<int:upload_id>', methods=['DELETE'])
 def delete_upload(upload_id):
@@ -87,16 +122,13 @@ def serve_csv(upload_id):
             return abort(404)
         return send_file(filepath, mimetype='text/csv')
 
-# Admin related code - deleting all uploads
 @collection_bp.route('/delete-all-uploads', methods=['POST'])
 def delete_all_uploads():
     upload_dir = current_app.config['UPLOAD_FOLDER']
 
     with Session() as session:
-        # Step 1: Get all uploads
         uploads = session.query(Upload).all()
 
-        # Step 2: Delete each file from disk
         for upload in uploads:
             filepath = os.path.join(upload_dir, upload.name)
             if os.path.exists(filepath):
@@ -105,36 +137,7 @@ def delete_all_uploads():
                 except Exception as e:
                     print(f"Failed to delete file {filepath}: {e}")
 
-        # Step 3: Delete all Upload records from DB
         session.query(Upload).delete()
         session.commit()
 
     return jsonify({'message': 'All uploads and their files have been deleted.'}), 200
-
-@collection_bp.route('/search/<int:user_id>', methods=['GET'])
-def search_uploads(user_id):
-    query = request.args.get('q', '').strip()
-    if not query:
-        return jsonify({"error": "Search query is required"}), 400
-
-    with Session() as session:
-        uploads = (
-            session.query(Upload)
-            .filter(
-                Upload.user_id == user_id,
-                Upload.name.ilike(f"%{query}%")  # case-insensitive match
-            )
-            .all()
-        )
-
-        results = [
-            {
-                "upload_id": upload.upload_id,
-                "name": upload.name,
-                "date_created": upload.date_created.isoformat(),
-                "date_modified": upload.date_modified.isoformat()
-            }
-            for upload in uploads
-        ]
-
-    return jsonify(results)
