@@ -133,6 +133,8 @@ function Dashboard() {
   const [virscanFiles, setVirscanFiles] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hoveredIndex, setHoveredIndex] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -164,6 +166,31 @@ function Dashboard() {
     setVirscanFiles((prevFiles) => [...prevFiles, newFile]);
   };
 
+  // NEW: handle search
+  const handleSearch = () => {
+    const token = localStorage.getItem("token");
+    const userId = localStorage.getItem("user_id");
+
+    if (!userId || !searchQuery.trim()) return;
+
+    axios
+      .get(`http://localhost:5000/search/${userId}?q=${searchQuery}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then((response) => {
+        setSearchResults(response.data);
+      })
+      .catch((error) => {
+        console.error("Search error:", error);
+      });
+  };
+
+  // Decide which list to show
+  const filesToDisplay =
+    searchResults.length > 0 || searchQuery.trim().length > 0
+      ? searchResults
+      : virscanFiles;
+
   return (
     <div style={dashboardContainer}>
       <div style={upperRow}>
@@ -179,6 +206,17 @@ function Dashboard() {
         </button>
       </div>
 
+      <div style={{ marginBottom: "1rem" }}>
+        <input
+          type="text"
+          placeholder="Search files..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={{ padding: "0.5rem", borderRadius: "5px", marginRight: "0.5rem" }}
+        />
+        <button onClick={handleSearch}>Search</button>
+      </div>
+
       <div>
         <h2 style={{ fontFamily: 'Poppins, sans-serif', marginBottom: '1rem' }}>
           Your Uploaded Files
@@ -186,8 +224,8 @@ function Dashboard() {
         <div style={cardGrid}>
           {isLoading ? (
             <p>Loading VirScan Files...</p>
-          ) : virscanFiles.length > 0 ? (
-            virscanFiles.map((file, index) => (
+          ) : filesToDisplay.length > 0 ? (
+            filesToDisplay.map((file, index) => (
               <div
                 key={file.upload_id}
                 style={{
