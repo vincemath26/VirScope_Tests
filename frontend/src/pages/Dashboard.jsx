@@ -40,19 +40,20 @@ function Dashboard() {
     margin: '1rem 0',
   };
 
+  // Button base style
   const button = {
     color: '#000000',
-    fontSize: '2rem',
-    height: '50%',
-    width: '20%',
+    height: '40px',
     borderStyle: 'solid',
     borderColor: '#73D798',
     borderWidth: '3px',
     borderRadius: '20px',
     backgroundColor: '#ffffff',
     boxSizing: 'border-box',
-    margin: '1rem',
+    margin: '0',
+    padding: '0 1rem',
     transition: 'all 0.3s ease',
+    cursor: 'pointer',
   };
 
   const buttonHover = {
@@ -61,19 +62,11 @@ function Dashboard() {
     color: '#ffffff',
   };
 
-  const buttonClick = {
-    ...button,
-    transform: 'scale(0.95)',
-  };
+  const [isHoveredUpload, setIsHoveredUpload] = useState(false);
+  const [isHoveredSearch, setIsHoveredSearch] = useState(false);
 
-  const [isClicked, setIsClicked] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
-
-  const buttonStyle = () => {
-    if (isClicked) return buttonClick;
-    if (isHovered) return buttonHover;
-    return button;
-  };
+  const buttonStyleUpload = () => (isHoveredUpload ? buttonHover : button);
+  const buttonStyleSearch = () => (isHoveredSearch ? buttonHover : button);
 
   const [isCreateVisible, setIsCreateVisible] = useState(false);
   const openPopup = () => setIsCreateVisible(true);
@@ -133,6 +126,8 @@ function Dashboard() {
   const [virscanFiles, setVirscanFiles] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hoveredIndex, setHoveredIndex] = useState(null);
+
+  // Search states
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
 
@@ -147,9 +142,7 @@ function Dashboard() {
 
     axios
       .get(`http://localhost:5000/uploads/${userId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       })
       .then((response) => {
         setVirscanFiles(response.data);
@@ -166,12 +159,17 @@ function Dashboard() {
     setVirscanFiles((prevFiles) => [...prevFiles, newFile]);
   };
 
-  // NEW: handle search
   const handleSearch = () => {
-    const token = localStorage.getItem("token");
-    const userId = localStorage.getItem("user_id");
+    const token = localStorage.getItem('token');
+    const userId = localStorage.getItem('user_id');
 
-    if (!userId || !searchQuery.trim()) return;
+    if (!userId) return;
+
+    if (!searchQuery.trim()) {
+      // Empty search: show all files
+      setSearchResults([]);
+      return;
+    }
 
     axios
       .get(`http://localhost:5000/search/${userId}?q=${searchQuery}`, {
@@ -181,11 +179,10 @@ function Dashboard() {
         setSearchResults(response.data);
       })
       .catch((error) => {
-        console.error("Search error:", error);
+        console.error('Search error:', error);
       });
   };
 
-  // Decide which list to show
   const filesToDisplay =
     searchResults.length > 0 || searchQuery.trim().length > 0
       ? searchResults
@@ -196,25 +193,53 @@ function Dashboard() {
       <div style={upperRow}>
         <h1 style={dashboardTitle}>Welcome to VirScan! What do you want to analyse?</h1>
         <hr style={line} />
-        <button
-          style={buttonStyle()}
-          onMouseEnter={() => setIsHovered(true)}
-          onMouseLeave={() => setIsHovered(false)}
-          onClick={openPopup}
-        >
-          New Analysis
-        </button>
       </div>
 
-      <div style={{ marginBottom: "1rem" }}>
+      {/* Modern search + upload row */}
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: "1rem",
+          marginBottom: "2rem",
+        }}
+      >
         <input
           type="text"
           placeholder="Search files..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          style={{ padding: "0.5rem", borderRadius: "5px", marginRight: "0.5rem" }}
+          style={{
+            padding: "0.5rem 1rem",
+            borderRadius: "20px",
+            border: `3px solid #73D798`,
+            fontSize: "1rem",
+            width: "250px",
+            outline: "none",
+            boxSizing: "border-box",
+            flexGrow: 1,
+            minWidth: "150px",
+          }}
         />
-        <button onClick={handleSearch}>Search</button>
+
+        <button
+          style={{ ...button, width: "90px", fontSize: "1rem" }}
+          onMouseEnter={() => setIsHoveredSearch(true)}
+          onMouseLeave={() => setIsHoveredSearch(false)}
+          onClick={handleSearch}
+        >
+          Search
+        </button>
+
+        <button
+          style={{ ...button, width: "140px", fontSize: "1rem" }}
+          onMouseEnter={() => setIsHoveredUpload(true)}
+          onMouseLeave={() => setIsHoveredUpload(false)}
+          onClick={openPopup}
+        >
+          New Analysis
+        </button>
       </div>
 
       <div>
