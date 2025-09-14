@@ -5,6 +5,7 @@ import FileReader from '../components/FileReader';
 import DeleteWarning from '../components/DeleteWarning';
 import { toast } from 'react-toastify';
 import Plot from 'react-plotly.js';
+import Form from '../components/Form';
 
 function Visualisation() {
   const { uploadId } = useParams();
@@ -97,6 +98,41 @@ function Visualisation() {
     }
   };
 
+  const [showPdfForm, setShowPdfForm] = useState(false);
+  const [pdfStatus, setPdfStatus] = useState("");
+  const [pdfProgress, setPdfProgress] = useState(0);
+  const [pdfUrl, setPdfUrl] = useState("");
+
+  const handlePdfSubmit = async (payload) => {
+    setShowPdfForm(false);
+    setPdfStatus("Generating PDF...");
+    setPdfProgress(0);
+
+    try {
+      const response = await axios.post(
+        `${backendBaseURL}/generate_pdf/${uploadId}`,
+        payload,
+        { responseType: 'blob' } // important!
+      );
+
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `upload_${uploadId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+      setPdfStatus("PDF ready!");
+      setPdfProgress(1);
+    } catch (err) {
+      console.error(err);
+      setPdfStatus("Error generating PDF.");
+    }
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     fetchGraph();
@@ -120,6 +156,7 @@ function Visualisation() {
       if (!interactiveData.values?.length) return <span>No heatmap data available</span>;
       return (
         <Plot
+          id="heatmap-plot"
           data={[{
             z: interactiveData.values,
             x: interactiveData.samples,
@@ -147,6 +184,7 @@ function Visualisation() {
       if (!interactiveData.values?.length) return <span>No barplot data available</span>;
       return (
         <Plot
+          id="barplot-plot"
           data={interactiveData.species.map((species, i) => ({
             x: interactiveData.samples,
             y: interactiveData.values.map(row => row[i]),
@@ -241,6 +279,7 @@ function Visualisation() {
       };
 
       return <Plot
+        id="antigen-map-plot"
         data={[caseTrace, controlTrace]}
         layout={layout}
         config={{ responsive: true }}
@@ -254,7 +293,6 @@ function Visualisation() {
     <div style={{ paddingTop: '80px', display: 'flex', justifyContent: 'center' }}>
       <div style={{ width: '100%', maxWidth: '1200px', padding: '0 20px' }}>
 
-        {/* Back & Delete Buttons side by side */}
         <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
           <button
             onClick={() => navigate('/dashboard')}
@@ -271,7 +309,7 @@ function Visualisation() {
           </button>
 
           <button
-            onClick={() => console.log('Generate PDF clicked!')}
+            onClick={() => setShowPdfForm(true)}
             style={{
               backgroundColor: '#4caf50',
               color: 'white',
@@ -297,6 +335,24 @@ function Visualisation() {
           >
             Delete
           </button>
+        </div>
+
+        {showPdfForm && (
+          <Form
+            onSubmit={handlePdfSubmit}
+            onCancel={() => setShowPdfForm(false)}
+          />
+        )}
+
+        <div style={{ marginTop: '10px', marginBottom: '20px' }}>
+          <div>Status: {pdfStatus}</div>
+          {pdfUrl && (
+            <div>
+              <a href={pdfUrl} target="_blank" rel="noopener noreferrer">
+                Download PDF
+              </a>
+            </div>
+          )}
         </div>
 
         <h2>CSV Preview of {fileName || 'Upload'}</h2>
