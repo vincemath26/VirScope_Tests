@@ -68,6 +68,30 @@ function Header() {
 
   const navigate = useNavigate();
 
+  // Adding search
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+
+  const handleSearch = () => {
+    const userId = localStorage.getItem("user_id");
+    const token = localStorage.getItem("token");
+
+    if (!userId || !searchQuery.trim()) return;
+
+    axios
+      .get(`http://localhost:5000/search/${userId}?q=${searchQuery}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then((response) => {
+        setSearchResults(response.data);
+        // Optionally: navigate to a "Search Results" page, or update dashboard
+        console.log("Search results:", response.data);
+      })
+      .catch((error) => {
+        console.error("Search error:", error);
+      });
+  };
+
   // Check if the user is logged in by checking for a token
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -113,6 +137,18 @@ function Header() {
   return (
     <header style={headerStyle}>
       <h1 style={headerTitle}>VirScope</h1>
+      <div style={{ display: "flex", alignItems: "center" }}>
+        <input
+          type="text"
+          placeholder="Search files..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={{ padding: "0.5rem", borderRadius: "5px", marginRight: "0.5rem" }}
+        />
+        <button style={button} onClick={handleSearch}>
+          Search
+        </button>
+      </div>
       <button
         style={buttonStyle('logout')}
         onMouseEnter={() => setIsHoveredLogout('logout')}
