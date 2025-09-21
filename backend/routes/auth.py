@@ -3,9 +3,51 @@ from sqlalchemy.orm import Session as SqlAlchemySession
 from models.models import User
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
+import datetime
 
 # Define Blueprint
 auth_bp = Blueprint('auth', __name__)
+
+@auth_bp.route('/check-site-password', methods=['POST'])
+def check_site_password():
+    from app import app
+    data = request.get_json() or {}
+    password = data.get('password')
+
+    if not password:
+        return jsonify({'error': 'Missing password'}), 400
+
+    site_password = app.config.get('SITE_PASSWORD')
+
+    if password == site_password:
+        exp_time = datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+        payload = {
+            'site_access': True,
+            'iat': datetime.datetime.utcnow(),
+            'exp': exp_time
+        }
+        token = jwt.encode(payload, app.secret_key, algorithm='HS256')
+        return jsonify({'message': 'Access granted', 'token': token}), 200
+
+    return jsonify({'error': 'Invalid site password'}), 401
+
+@auth_bp.route('/verify-site-token', methods=['POST'])
+def verify_site_token():
+    from app import app
+    token = request.json.get('token')
+
+    if not token:
+        return jsonify({'error': 'Token missing'}), 400
+
+    try:
+        decoded = jwt.decode(token, app.secret_key, algorithms=['HS256'])
+        if decoded.get('site_access'):
+            return jsonify({'valid': True}), 200
+        return jsonify({'valid': False}), 401
+    except jwt.ExpiredSignatureError:
+        return jsonify({'error': 'Token expired'}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({'error': 'Invalid token'}), 401
 
 @auth_bp.route('/users', methods=['GET'])
 def list_users():

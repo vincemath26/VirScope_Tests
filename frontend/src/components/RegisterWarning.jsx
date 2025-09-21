@@ -101,7 +101,7 @@ function RegisterWarning({ onClose }) {
       </h1>
       <hr style={line} />
       <p style={{...text, ...popupContent}}>
-        User already exists. Please try again!
+        An error has occured, please try again!
       </p>
       <button 
         style={buttonStyle('close')}
