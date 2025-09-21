@@ -95,47 +95,6 @@ def plot_species_rpk_stacked_barplot(df, top_n_species=10, output_path=None):
     buf.seek(0)
     return send_file(buf, mimetype="image/png")
 
-def plot_filtered_species_rpk_heatmap(df, virus_query, output_path=None):
-    # Compute rpk
-    df = compute_rpk(df)
-
-    # Filter valid data
-    df = df.dropna(subset=['taxon_species', 'sample_id', 'rpk'])
-
-    # Case-insensitive species filtering by virus_query
-    mask = df['taxon_species'].str.contains(virus_query, case=False, na=False)
-    filtered_df = df[mask]
-
-    if filtered_df.empty:
-        raise ValueError(f"No species match the virus query: '{virus_query}'")
-
-    # Group and pivot for heatmap
-    grouped = filtered_df.groupby(['taxon_species', 'sample_id'])['rpk'].sum().reset_index()
-    heatmap_data = grouped.pivot(index='taxon_species', columns='sample_id', values='rpk').fillna(0)
-
-    # Sort sample columns alphabetically
-    heatmap_data = heatmap_data[sorted(heatmap_data.columns)]
-
-    # Plot
-    plt.figure(figsize=(18, 10))
-    sns.heatmap(heatmap_data, cmap="magma", annot=False, cbar_kws={'label': 'Total Peptide RPK'})
-    plt.title(f"Filtered Species Heatmap for '{virus_query}'")
-    plt.xlabel("Sample ID")
-    plt.ylabel("Matching Species")
-    plt.tight_layout()
-
-    # Save or return
-    if output_path:
-        plt.savefig(output_path)
-        plt.close()
-        return send_file(output_path, mimetype='image/png', as_attachment=False, download_name='filtered_species_rpk_heatmap.png')
-
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png", dpi=300)
-    plt.close()
-    buf.seek(0)
-    return send_file(buf, mimetype="image/png")
-
 # Translated Legana's R Code.
 def write_antigen_map_fasta(df, output_path):
     if not {'pep_id', 'pep_aa'}.issubset(df.columns):
