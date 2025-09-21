@@ -50,7 +50,6 @@ function Dashboard() {
   const [editingId, setEditingId] = useState(null);
   const [newName, setNewName] = useState("");
 
-  // Fetch files for user
   const fetchFiles = (query = "") => {
     const token = localStorage.getItem('token');
     const userId = localStorage.getItem('user_id');
@@ -68,7 +67,6 @@ function Dashboard() {
   useEffect(() => { fetchFiles(); }, []);
 
   const handleSearch = () => { fetchFiles(searchQuery); };
-
   const handleNewVirScan = (newFile) => setVirscanFiles(prev => [...prev, newFile]);
 
   const renameFile = (upload_id) => {
@@ -77,7 +75,7 @@ function Dashboard() {
 
     axios.post(
       `http://localhost:5000/upload/${upload_id}/rename`,
-      { new_name: newName },  // pass just base name
+      { new_name: newName },
       { headers: { Authorization: `Bearer ${token}` } }
     )
     .then(res => {
@@ -92,7 +90,6 @@ function Dashboard() {
     });
   };
 
-  // Card styles
   const card = {
     border: '1px solid #ddd',
     borderRadius: '12px',
@@ -113,7 +110,58 @@ function Dashboard() {
   const cardHover = { transform: 'scale(1.05)', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' };
   const fileName = { fontWeight: 'bold', fontSize: '1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' };
   const fileDate = { fontSize: '0.9rem', color: '#666' };
-  const cardGrid = { display: 'flex', gap: '15px', flexWrap: 'wrap' };
+
+  const cardRow = { display: 'flex', justifyContent: 'center', gap: '15px', marginBottom: '1rem', flexWrap: 'nowrap' };
+
+  const renderRows = () => {
+    const rows = [];
+    for (let i = 0; i < virscanFiles.length; i += 5) {
+      rows.push({ files: virscanFiles.slice(i, i + 5), startIndex: i });
+    }
+
+    return rows.map((row, rowIndex) => (
+      <div key={rowIndex} style={cardRow}>
+        {row.files.map((file, index) => (
+          <div
+            key={file.upload_id}
+            title={file.name}
+            style={{ ...card, ...(hoveredIndex === row.startIndex + index ? cardHover : {}) }}
+            onMouseEnter={() => setHoveredIndex(row.startIndex + index)}
+            onMouseLeave={() => setHoveredIndex(null)}
+            onClick={() => navigate(`/visualise/${file.upload_id}`)}
+          >
+            {editingId === file.upload_id ? (
+              <input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onBlur={() => renameFile(file.upload_id)}
+                onKeyDown={(e) => { if(e.key === 'Enter') renameFile(file.upload_id) }}
+                style={{
+                  width: '90%',
+                  padding: '0.3rem',
+                  borderRadius: '10px',
+                  border: '2px solid #73D798',
+                  fontSize: '0.9rem'
+                }}
+                autoFocus
+              />
+            ) : (
+              <h3
+                style={fileName}
+                onDoubleClick={() => {
+                  setEditingId(file.upload_id);
+                  setNewName(file.name.replace(/\.[^/.]+$/, ""));
+                }}
+              >
+                {file.name}
+              </h3>
+            )}
+            <p style={fileDate}>{new Date(file.date_created).toLocaleString()}</p>
+          </div>
+        ))}
+      </div>
+    ));
+  };
 
   return (
     <div style={dashboardContainer}>
@@ -156,49 +204,9 @@ function Dashboard() {
 
       <div style={{ marginTop: '2rem' }}>
         <h2 style={{ fontFamily: 'Poppins, sans-serif', marginBottom: '1rem' }}>Your Uploaded Files</h2>
-        <div style={cardGrid}>
-          {isLoading ? <p>Loading VirScan Files...</p> :
-            virscanFiles.length > 0 ? virscanFiles.map((file, index) => (
-              <div
-                key={file.upload_id}
-                title={file.name}
-                style={{ ...card, ...(hoveredIndex === index ? cardHover : {}) }}
-                onMouseEnter={() => setHoveredIndex(index)}
-                onMouseLeave={() => setHoveredIndex(null)}
-                onClick={() => navigate(`/visualise/${file.upload_id}`)}
-              >
-                {editingId === file.upload_id ? (
-                  <input
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    onBlur={() => renameFile(file.upload_id)}
-                    onKeyDown={(e) => { if(e.key === 'Enter') renameFile(file.upload_id) }}
-                    style={{
-                      width: '90%',
-                      padding: '0.3rem',
-                      borderRadius: '10px',
-                      border: '2px solid #73D798',
-                      fontSize: '0.9rem'
-                    }}
-                    autoFocus
-                  />
-                ) : (
-                  <h3
-                    style={fileName}
-                    onDoubleClick={() => {
-                      setEditingId(file.upload_id);
-                      // remove extension for editing input
-                      setNewName(file.name.replace(/\.[^/.]+$/, ""));
-                    }}
-                  >
-                    {file.name}
-                  </h3>
-                )}
-                <p style={fileDate}>{new Date(file.date_created).toLocaleString()}</p>
-              </div>
-            )) : <p>No uploaded files found.</p>
-          }
-        </div>
+        {isLoading ? <p>Loading VirScan Files...</p> :
+          virscanFiles.length > 0 ? renderRows() : <p>No uploaded files found.</p>
+        }
       </div>
 
       <div style={{ display: isCreateVisible ? 'block' : 'none' }}>

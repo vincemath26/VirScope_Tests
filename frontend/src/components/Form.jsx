@@ -1,4 +1,3 @@
-// src/components/Form.jsx
 import React, { useState } from 'react';
 import { toast } from 'react-toastify';
 
@@ -43,6 +42,10 @@ function Form({ onSubmit, onCancel }) {
   return (
     <div style={{ padding: '20px', border: '2px solid #ddd', borderRadius: '5px', backgroundColor: '#fafafa', maxWidth: '600px', margin: '20px auto' }}>
       <h3>Select Graphs for PDF</h3>
+      <p style={{ fontSize: '14px', color: '#555', marginBottom: '10px' }}>
+        Note: The generated images resemble the static PNG versions for better quality,
+        not the interactive versions you see in the app.
+      </p>
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
         
         {/* Heatmap */}

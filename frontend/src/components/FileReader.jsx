@@ -99,30 +99,32 @@ function FileReader({ uploadId }) {
   }
 
   return (
-    <div style={{ maxHeight: '300px', overflowY: 'auto', overflowX: 'auto', border: '1px solid #ccc' }}>
-      <table border="1" cellPadding="5" style={{ borderCollapse: 'collapse', width: '100%' }}>
-        <thead>
-          <tr>
-            {headers.map((col) => (
-              <th key={col}>{col}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {csvData.map((row, i) => (
-            <tr key={i}>
+    <div style={{ maxWidth: '1000px', margin: '0 auto', width: '100%' }}>
+      <div style={{ maxHeight: '400px', overflowY: 'auto', overflowX: 'auto', border: '1px solid #ccc' }}>
+        <table border="1" cellPadding="5" style={{ borderCollapse: 'collapse', width: '100%' }}>
+          <thead>
+            <tr>
               {headers.map((col) => (
-                <td key={col}>{row[col]}</td>
+                <th key={col}>{col}</th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
-      {csvData.length === MAX_ROWS && (
-        <div style={{ marginTop: '5px', fontSize: '0.85em', color: '#555' }}>
-          Showing first {MAX_ROWS} rows.
-        </div>
-      )}
+          </thead>
+          <tbody>
+            {csvData.map((row, i) => (
+              <tr key={i}>
+                {headers.map((col) => (
+                  <td key={col}>{row[col]}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {csvData.length === MAX_ROWS && (
+          <div style={{ marginTop: '5px', fontSize: '0.85em', color: '#555' }}>
+            Showing first {MAX_ROWS} rows.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
