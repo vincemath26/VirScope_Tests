@@ -1,2 +1,15 @@
+# Ignore these please!
+
+# Note Modules
 node_modules
+
+# Python virtual environment
+backend/venv/
+
+# Python cache files and folders
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Local uploads within backend
 backend/uploads/
