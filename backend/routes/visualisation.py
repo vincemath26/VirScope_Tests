@@ -6,7 +6,6 @@ from utils.visualisation import (
     compute_rpk,
     plot_species_rpk_heatmap,
     plot_species_rpk_stacked_barplot,
-    plot_filtered_species_rpk_heatmap,
     plot_antigen_map,
     write_antigen_map_fasta,
     run_blastp,
@@ -45,18 +44,6 @@ def species_stacked_barplot(upload_id):
             return jsonify({"error": "Upload not found"}), 404
         df = pd.read_csv(os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name), sep=None, engine="python")
     return plot_species_rpk_stacked_barplot(df, top_n_species=top_n_species)
-
-@visualisation_bp.route('/filtered_species_rpk_heatmap/png/<int:upload_id>', methods=['GET'])
-def filtered_species_heatmap(upload_id):
-    virus_query = request.args.get('virus_query', '')
-    if not virus_query:
-        return jsonify({"error": "Missing virus_query parameter"}), 400
-    with Session() as session:
-        upload = session.get(Upload, upload_id)
-        if not upload:
-            return jsonify({"error": "Upload not found"}), 404
-        df = pd.read_csv(os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name), sep=None, engine="python")
-    return plot_filtered_species_rpk_heatmap(df, virus_query=virus_query)
 
 @visualisation_bp.route('/antigen_map/png/<int:upload_id>', methods=['GET'])
 def antigen_map_png(upload_id):
