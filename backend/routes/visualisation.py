@@ -1,3 +1,4 @@
+import io
 import os
 import pandas as pd
 from flask import Blueprint, current_app, jsonify, request, send_file, g
@@ -13,6 +14,7 @@ from utils.visualisation import (
     calculate_moving_sum,
     read_ev_polyprotein_uniprot_metadata,
     generate_pdf,
+    prepare_antigen_map_df,  # <-- new helper
 )
 from utils.db import Session
 from models.models import Upload, GraphText
@@ -57,6 +59,7 @@ def antigen_map_png(upload_id):
     user_id = g.current_user_id
     win_size = int(request.args.get('win_size', 32))
     step_size = int(request.args.get('step_size', 4))
+
     with Session() as session:
         upload = session.get(Upload, upload_id)
         if not upload:
@@ -65,24 +68,8 @@ def antigen_map_png(upload_id):
             return jsonify({"error": "Forbidden"}), 403
         df = pd.read_csv(os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name), sep=None, engine="python")
 
-    cache_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], 'cache')
-    os.makedirs(cache_dir, exist_ok=True)
-    fasta_path = os.path.join(cache_dir, f"upload_{upload_id}_peptides.fasta")
-    blast_output_path = os.path.join(cache_dir, f"upload_{upload_id}_blast_results.blast")
-    blast_db_prefix = os.path.join(BACKEND_ROOT, 'data', 'raw_data', 'blast_databases', 'coxsackievirusB1_P08291_db')
-
-    if not os.path.exists(blast_db_prefix + ".pin"):
-        return jsonify({"error": "BLAST database not found"}), 404
-
-    write_antigen_map_fasta(df, fasta_path)
-    run_blastp(fasta_path, blast_db_prefix, blast_output_path)
-    blast_df = read_blast(blast_output_path)
-    mean_rpk_df = calculate_mean_rpk_difference(df, blast_df)
-    moving_sum_df = calculate_moving_sum(mean_rpk_df, win_size=win_size, step_size=step_size)
-
-    polyprotein_path = os.path.join(BACKEND_ROOT, 'data', 'raw_data', 'coxsackievirusB1_P08291.tsv')
-    ev_df = read_ev_polyprotein_uniprot_metadata(polyprotein_path)
-
+    # Use the new helper
+    moving_sum_df, ev_df = prepare_antigen_map_df(upload_id, df, win_size, step_size, app=current_app)
     return plot_antigen_map(moving_sum_df, ev_df=ev_df)
 
 # ---------------- JSON Routes ----------------
@@ -156,68 +143,17 @@ def antigen_map_json(upload_id):
             }), 404
         if upload.user_id != user_id:
             return jsonify({"moving_sum": [], "window_start": [], "window_end": [], "ev_domains": [], "error": "Forbidden"}), 403
-        filename = upload.name
-
-    filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
-    if not os.path.exists(filepath):
-        return jsonify({
-            "moving_sum": [], "window_start": [], "window_end": [], "ev_domains": [],
-            "error": "File not found on server"
-        }), 404
+        df = pd.read_csv(os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name), sep=None, engine="python")
 
     try:
-        df = pd.read_csv(filepath, sep=None, engine='python')
-    except Exception as e:
-        return jsonify({
-            "moving_sum": [], "window_start": [], "window_end": [], "ev_domains": [],
-            "error": f"Failed to read CSV: {str(e)}"
-        }), 400
-
-    try:
-        cache_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], 'cache')
-        os.makedirs(cache_dir, exist_ok=True)
-        fasta_path = os.path.join(cache_dir, f"upload_{upload_id}_peptides.fasta")
-        blast_output_path = os.path.join(cache_dir, f"upload_{upload_id}_blast_results.blast")
-
-        write_antigen_map_fasta(df, fasta_path)
-
-        blast_db_prefix = os.path.join(
-            BACKEND_ROOT, 'data', 'raw_data', 'blast_databases', 'coxsackievirusB1_P08291_db'
-        )
-        if not os.path.exists(blast_db_prefix + ".pin"):
-            return jsonify({
-                "moving_sum": [], "window_start": [], "window_end": [], "ev_domains": [],
-                "error": "BLAST database not found"
-            }), 404
-
-        run_blastp(fasta_path, blast_db_prefix, blast_output_path)
-        blast_df = read_blast(blast_output_path)
-
-        mean_rpk_diff_df = calculate_mean_rpk_difference(df, blast_df)
-        moving_sum_df = calculate_moving_sum(mean_rpk_diff_df, win_size=win_size, step_size=step_size)
-
-        if not moving_sum_df.empty:
-            moving_sum_df = moving_sum_df.groupby('window_start', as_index=False)['moving_sum'].sum()
-            moving_sum_df['window_end'] = moving_sum_df['window_start'] + win_size - 1
-
-        polyprotein_path = os.path.join(BACKEND_ROOT, 'data', 'raw_data', 'coxsackievirusB1_P08291.tsv')
-        if not os.path.exists(polyprotein_path):
-            return jsonify({
-                "moving_sum": [], "window_start": [], "window_end": [], "ev_domains": [],
-                "error": "Polyprotein metadata file not found"
-            }), 404
-
-        ev_df = read_ev_polyprotein_uniprot_metadata(polyprotein_path)
-
+        moving_sum_df, ev_df = prepare_antigen_map_df(upload_id, df, win_size, step_size, app=current_app)
         json_data = {
             "moving_sum": moving_sum_df['moving_sum'].tolist() if not moving_sum_df.empty else [],
             "window_start": moving_sum_df['window_start'].tolist() if not moving_sum_df.empty else [],
             "window_end": moving_sum_df['window_end'].tolist() if not moving_sum_df.empty else [],
             "ev_domains": ev_df[['start', 'end', 'ev_proteins']].to_dict(orient='records') if not ev_df.empty else []
         }
-
         return jsonify(json_data)
-
     except Exception as e:
         return jsonify({
             "moving_sum": [], "window_start": [], "window_end": [], "ev_domains": [],
@@ -274,13 +210,114 @@ def generate_pdf_route(upload_id):
     import traceback
     try:
         print(f"PDF generation payload: {payload}")
-        pdf_buf = generate_pdf(upload_id, payload, app=current_app, return_buffer=True)
+        graphs = payload.get("graphs", [])
+        if not graphs:
+            return {"error": "No graphs specified for PDF generation"}, 400
+
+        # Load upload CSV once
+        upload_path = os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name)
+        df = pd.read_csv(upload_path, sep=None, engine="python")
+
+        from fpdf import FPDF
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
+
+        def get_graph_text(graph_type):
+            with Session() as session:
+                gt = session.query(GraphText).filter_by(upload_id=upload_id, graph_type=graph_type).first()
+                return gt.text if gt else ""
+
+        def resp_to_pngfile(resp_bytes):
+            import tempfile
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+            try:
+                tmp.write(resp_bytes)
+                tmp.flush()
+                tmp.close()
+                return tmp.name
+            except Exception:
+                try:
+                    tmp.close()
+                except Exception:
+                    pass
+                os.unlink(tmp.name)
+                raise
+
+        def get_bytes_from_response(resp):
+            if isinstance(resp, (bytes, bytearray)):
+                return bytes(resp)
+            get_data = getattr(resp, "get_data", None)
+            if callable(get_data):
+                if hasattr(resp, "direct_passthrough"):
+                    resp.direct_passthrough = False
+                return get_data()
+            data_attr = getattr(resp, "data", None)
+            if data_attr is not None:
+                return data_attr
+            body = b""
+            gen = getattr(resp, "response", None)
+            if gen is not None:
+                for chunk in gen:
+                    if isinstance(chunk, str):
+                        chunk = chunk.encode()
+                    body += chunk
+                return body
+            raise RuntimeError("Could not extract bytes from response object")
+
+        for g in graphs:
+            gtype = g.get("type", "").lower()
+            if not gtype:
+                continue
+
+            if gtype == "heatmap":
+                top_n = int(g.get("topN", 20))
+                resp = plot_species_rpk_heatmap(df, top_n_species=top_n, output_path=None)
+                img_bytes = get_bytes_from_response(resp)
+
+            elif gtype == "barplot":
+                top_n = int(g.get("topN", 10))
+                resp = plot_species_rpk_stacked_barplot(df, top_n_species=top_n, output_path=None)
+                img_bytes = get_bytes_from_response(resp)
+
+            elif gtype == "antigen_map":
+                win_size = int(g.get("win_size", 32))
+                step_size = int(g.get("step_size", 4))
+
+                # Use the new helper to avoid repeating BLAST/FASTA logic
+                moving_sum_df, ev_df = prepare_antigen_map_df(upload_id, df, win_size, step_size, app=current_app)
+                resp = plot_antigen_map(moving_sum_df, ev_df=ev_df, output_path=None)
+                img_bytes = get_bytes_from_response(resp)
+
+            else:
+                continue
+
+            tmp_png = resp_to_pngfile(img_bytes)
+            try:
+                pdf.add_page()
+                try:
+                    pdf.image(tmp_png, x=10, y=30, w=pdf.w - 20)
+                except RuntimeError:
+                    pdf.image(tmp_png, x=10, y=30, w=pdf.w - 40)
+                text = get_graph_text(gtype)
+                if text:
+                    pdf.set_xy(10, pdf.get_y() + (pdf.h * 0.55))
+                    pdf.set_font("Arial", size=12)
+                    pdf.multi_cell(w=pdf.w - 20, h=6, txt=text)
+            finally:
+                try:
+                    os.unlink(tmp_png)
+                except Exception:
+                    pass
+
+        pdf_buf = io.BytesIO(pdf.output(dest='S').encode('latin1'))
+        pdf_buf.seek(0)
         return send_file(
             pdf_buf,
             mimetype="application/pdf",
             as_attachment=True,
             download_name=f"upload_{upload_id}.pdf"
         )
+
     except Exception as e:
         print("=== PDF Generation Error Traceback ===")
         traceback.print_exc()

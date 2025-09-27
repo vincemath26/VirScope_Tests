@@ -3,7 +3,7 @@
 # My .env file
 .env
 
-# Note Modules
+# Node Modules
 node_modules
 
 # Python virtual environment
@@ -14,8 +14,10 @@ __pycache__/
 **/__pycache__/
 *.py[cod]
 
-# Local uploads within backend
-backend/uploads/
+# Local uploads within backend (ignore all user uploads)
+backend/uploads/*
+!backend/uploads/cache/      # allow cache folder to exist in Git
+backend/uploads/cache/.gitkeep # track empty .gitkeep to ensure folder exists
 
 # References
 r_code_ref

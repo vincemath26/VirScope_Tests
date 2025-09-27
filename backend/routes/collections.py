@@ -1,27 +1,29 @@
 import os
 import pandas as pd
+import tempfile
 from datetime import datetime
 from flask import Blueprint, abort, request, jsonify, current_app, send_file, g
 from werkzeug.utils import secure_filename
 from utils.db import Session
 from models.models import Upload
 from routes.auth import jwt_required
+from utils.collections import (
+    allowed_file,
+    get_user_upload,
+    init_r2_client,
+    upload_file_to_r2,
+    download_file_from_r2,
+    delete_file_from_r2
+)
 
 collection_bp = Blueprint('collection', __name__)
-
 ALLOWED_EXTENSIONS = {'csv'}
 
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# -----------------------
-# Helper: get user upload
-# -----------------------
-def get_user_upload(session, upload_id, user_id):
-    upload = session.get(Upload, upload_id)
-    if not upload or upload.user_id != user_id:
-        return None
-    return upload
+def get_r2_client():
+    """Get a new R2 client instance for the current app context"""
+    return init_r2_client(current_app.config)
+
 
 # -----------------------
 # Upload a new file
@@ -44,9 +46,14 @@ def upload_file():
         if not name_with_ext.lower().endswith('.csv'):
             name_with_ext += '.csv'
 
-        filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], name_with_ext)
-        file.save(filepath)
+        # Upload file to R2
+        r2_client = get_r2_client()
+        R2_BUCKET = current_app.config.get('R2_BUCKET_NAME')
+        success = upload_file_to_r2(r2_client, R2_BUCKET, file, name_with_ext)
+        if not success:
+            return jsonify({"error": "Failed to upload file to R2"}), 500
 
+        # Add to database
         with Session() as session:
             upload = Upload(name=name_with_ext, user_id=user_id)
             session.add(upload)
@@ -56,6 +63,7 @@ def upload_file():
         return jsonify({"message": "File uploaded successfully", "upload_id": upload_id}), 201
 
     return jsonify({"error": "File type not allowed"}), 400
+
 
 # -----------------------
 # List all uploads for user
@@ -76,6 +84,7 @@ def list_uploads():
         ]
     return jsonify(uploads_data)
 
+
 # -----------------------
 # Rename upload
 # -----------------------
@@ -87,28 +96,39 @@ def rename_upload(upload_id):
         return jsonify({"error": "New name is required"}), 400
 
     with Session() as session:
-        upload = get_user_upload(session, upload_id, g.current_user_id)
+        upload = get_user_upload(session, Upload, upload_id, g.current_user_id)
         if not upload:
             return jsonify({"error": "Forbidden"}), 403
 
         ext = os.path.splitext(upload.name)[1]
         safe_name = secure_filename(new_name + ext)
 
-        old_filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name)
-        new_filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], safe_name)
+        r2_client = get_r2_client()
+        R2_BUCKET = current_app.config.get('R2_BUCKET_NAME')
 
-        if not os.path.exists(old_filepath):
-            return jsonify({"error": f"Original file not found: {old_filepath}"}), 404
-
+        # Rename in R2 by downloading to temp file, re-uploading, then deleting original
         try:
-            os.rename(old_filepath, new_filepath)
+            with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+                temp_path = tmp_file.name
+            if not download_file_from_r2(r2_client, R2_BUCKET, upload.name, temp_path):
+                os.remove(temp_path)
+                return jsonify({"error": "Failed to download original file from R2"}), 500
+
+            with open(temp_path, 'rb') as f:
+                if not upload_file_to_r2(r2_client, R2_BUCKET, f, safe_name):
+                    os.remove(temp_path)
+                    return jsonify({"error": "Failed to upload renamed file to R2"}), 500
+
+            delete_file_from_r2(r2_client, R2_BUCKET, upload.name)
+            os.remove(temp_path)
         except Exception as e:
-            return jsonify({"error": f"Failed to rename file: {e}"}), 500
+            return jsonify({"error": f"Failed to rename file in R2: {e}"}), 500
 
         upload.name = safe_name
         session.commit()
 
     return jsonify({"message": "File renamed successfully", "new_name": safe_name})
+
 
 # -----------------------
 # Delete single upload
@@ -117,18 +137,19 @@ def rename_upload(upload_id):
 @jwt_required
 def delete_upload(upload_id):
     with Session() as session:
-        upload = get_user_upload(session, upload_id, g.current_user_id)
+        upload = get_user_upload(session, Upload, upload_id, g.current_user_id)
         if not upload:
             return jsonify({"error": "Forbidden"}), 403
 
-        filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name)
-        if os.path.exists(filepath):
-            os.remove(filepath)
+        r2_client = get_r2_client()
+        R2_BUCKET = current_app.config.get('R2_BUCKET_NAME')
 
+        delete_file_from_r2(r2_client, R2_BUCKET, upload.name)
         session.delete(upload)
         session.commit()
 
     return jsonify({"message": "Upload deleted successfully"})
+
 
 # -----------------------
 # Serve CSV file
@@ -137,35 +158,38 @@ def delete_upload(upload_id):
 @jwt_required
 def serve_csv(upload_id):
     with Session() as session:
-        upload = get_user_upload(session, upload_id, g.current_user_id)
+        upload = get_user_upload(session, Upload, upload_id, g.current_user_id)
         if not upload:
             return jsonify({"error": "Forbidden"}), 403
 
-        filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name)
-        if not os.path.exists(filepath):
+        r2_client = get_r2_client()
+        R2_BUCKET = current_app.config.get('R2_BUCKET_NAME')
+
+        # Use tempfile for cross-platform temporary file storage
+        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+            temp_path = tmp_file.name
+
+        if not download_file_from_r2(r2_client, R2_BUCKET, upload.name, temp_path):
+            os.remove(temp_path)
             return abort(404)
 
-        return send_file(filepath, mimetype='text/csv')
+        response = send_file(temp_path, mimetype='text/csv')
+        return response
+
 
 # -----------------------
-# Delete all uploads
+# Delete all uploads globally
 # -----------------------
 @collection_bp.route('/delete-all-uploads', methods=['POST'])
-@jwt_required
-def delete_all_uploads():
-    user_id = g.current_user_id
-    upload_dir = current_app.config['UPLOAD_FOLDER']
-
+def delete_all_uploads_global():
     with Session() as session:
-        uploads = session.query(Upload).filter(Upload.user_id == user_id).all()
+        uploads = session.query(Upload).all()  # Grab all uploads, not just one user
+        r2_client = get_r2_client()
+        R2_BUCKET = current_app.config.get('R2_BUCKET_NAME')
+
         for upload in uploads:
-            filepath = os.path.join(upload_dir, upload.name)
-            if os.path.exists(filepath):
-                try:
-                    os.remove(filepath)
-                except Exception as e:
-                    print(f"Failed to delete file {filepath}: {e}")
+            delete_file_from_r2(r2_client, R2_BUCKET, upload.name)
             session.delete(upload)
         session.commit()
 
-    return jsonify({'message': 'All your uploads and their files have been deleted.'}), 200
+    return jsonify({'message': 'All uploads and their files have been deleted globally.'}), 200
