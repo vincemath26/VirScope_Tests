@@ -3,6 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import LoginWarning from '../components/LoginWarning';
 import axios from 'axios';
 
+// Backend URL
+const backendBaseURL = 'https://virscope.onrender.com';
+
 function Login() {
   const [formData, setFormData] = useState({ username: '', password: '' });
   const [showWarning, setShowWarning] = useState(false);
@@ -157,12 +160,13 @@ function Login() {
     e.preventDefault();
     const { username, password } = formData;
 
-    axios.post('http://localhost:5000/login', { username, password })
+    // 🔹 Use centralized backend URL
+    axios.post(`${backendBaseURL}/login`, { username, password })
       .then((response) => {
         if (response.data?.token && response.data?.user_id) {
           localStorage.setItem('token', response.data.token);
           localStorage.setItem('user_id', response.data.user_id);
-          
+
           // Set default Authorization header for all future Axios requests
           axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.token}`;
 

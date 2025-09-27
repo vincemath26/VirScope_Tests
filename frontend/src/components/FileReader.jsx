@@ -26,7 +26,7 @@ function FileReader({ uploadId }) {
 
     const token = localStorage.getItem('token');
 
-    fetch(`http://localhost:5000/uploads/csv/${uploadId}`, {
+    fetch(`https://virscope.onrender.com/uploads/csv/${uploadId}`, {
       headers: {
         'Authorization': `Bearer ${token}`
       }

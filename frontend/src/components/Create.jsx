@@ -31,7 +31,7 @@ function Create({ onClose, onCreate }) {
       setProgress(0);
 
       const response = await axios.post(
-        'http://localhost:5000/upload',
+        'https://virscope.onrender.com/upload',
         formData,
         {
           headers: {

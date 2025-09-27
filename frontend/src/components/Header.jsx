@@ -96,7 +96,7 @@ function Header() {
 
     // Corrected URL
     axios
-      .post('http://localhost:5000/logout', {}, config)
+      .post('https://virscope.onrender.com/logout', {}, config)
       .then((response) => {
         if (response) {
           localStorage.removeItem('token'); // Remove the token from localStorage

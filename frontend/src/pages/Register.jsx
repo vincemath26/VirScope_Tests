@@ -3,6 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import RegisterWarning from '../components/RegisterWarning';
 
+// Set backend base URL here
+const backendBaseURL = 'https://virscope.onrender.com';
+
 function Register() {
   const [formData, setFormData] = useState({
     email: '',
@@ -71,7 +74,6 @@ function Register() {
     padding: '0.5rem',
   };
 
-  // Left column text scales dynamically based on viewport width
   const welcomeTitle = {
     color: '#ffffff',
     fontSize: 'clamp(1.5rem, 4vw, 2.5rem)',
@@ -166,7 +168,9 @@ function Register() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    axios.post('http://localhost:5000/register', formData)
+
+    // 🔹 Use centralized backend URL
+    axios.post(`${backendBaseURL}/register`, formData)
       .then((response) => {
         const { token, user_id } = response.data;
         if (!token || !user_id) {

@@ -17,7 +17,9 @@ function Visualisation() {
   const [pdfUrl, setPdfUrl] = useState('');
   const [activeTab, setActiveTab] = useState('csv');
 
-  const backendBaseURL = 'http://localhost:5000';
+  // Updated backend base URL
+  const backendBaseURL = 'https://virscope.onrender.com';
+
   const token = localStorage.getItem('token');
   const axiosConfig = {
     headers: { Authorization: `Bearer ${token}` }

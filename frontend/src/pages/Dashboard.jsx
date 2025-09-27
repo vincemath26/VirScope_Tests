@@ -6,6 +6,9 @@ import axios from 'axios';
 function Dashboard() {
   const navigate = useNavigate();
 
+  // Backend URL
+  const backendBaseURL = 'https://virscope.onrender.com';
+
   // =========================
   // Styles
   // =========================
@@ -85,8 +88,7 @@ function Dashboard() {
   const fetchFiles = (query = "") => {
     const token = localStorage.getItem('token');
 
-    // 🔹 Fixed URL: remove userId, backend uses JWT
-    axios.get(`http://localhost:5000/uploads`, { headers: { Authorization: `Bearer ${token}` } })
+    axios.get(`${backendBaseURL}/uploads`, { headers: { Authorization: `Bearer ${token}` } })
       .then(response => {
         let files = response.data;
         if (query.trim()) files = files.filter(file => file.name.toLowerCase().includes(query.toLowerCase()));
@@ -101,7 +103,7 @@ function Dashboard() {
     if (token) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     }
-    setIsLoading(true); // ensure loader shows until fetch finishes
+    setIsLoading(true);
     fetchFiles();
   }, []);
 
@@ -113,7 +115,7 @@ function Dashboard() {
     if (!newName.trim()) { setEditingId(null); return; }
 
     axios.post(
-      `http://localhost:5000/upload/${upload_id}/rename`,
+      `${backendBaseURL}/upload/${upload_id}/rename`,
       { new_name: newName },
       { headers: { Authorization: `Bearer ${token}` } }
     )
@@ -130,7 +132,7 @@ function Dashboard() {
   };
 
   // =========================
-  // Card styles
+  // Card styles and rendering
   // =========================
   const card = {
     border: '1px solid #ddd',
@@ -205,7 +207,7 @@ function Dashboard() {
   };
 
   // =========================
-  // Responsive form row
+  // Responsive search row
   // =========================
   const searchRowStyle = {
     display: 'flex',

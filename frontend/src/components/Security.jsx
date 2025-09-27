@@ -3,6 +3,7 @@ import axios from 'axios';
 import { jwtDecode } from 'jwt-decode';
 
 function Security({ setSiteAuth }) {
+  const backendBaseURL = 'https://virscope.onrender.com';
   // States
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -74,7 +75,7 @@ function Security({ setSiteAuth }) {
       if (decoded.exp && decoded.exp > now) {
         // Optionally verify with backend
         axios
-          .post('http://localhost:5000/verify-site-token', { token })
+          .post(`${backendBaseURL}/verify-site-token`, { token })
           .then((res) => {
             if (res.data.valid) setSiteAuth(true);
             else localStorage.removeItem('siteToken');
@@ -97,7 +98,7 @@ function Security({ setSiteAuth }) {
     setError('');
 
     try {
-      const res = await axios.post('http://localhost:5000/check-site-password', { password });
+      const res = await axios.post(`${backendBaseURL}/check-site-password`, { password });
       localStorage.setItem('siteToken', res.data.token);
       setSiteAuth(true);
     } catch (err) {
