@@ -14,7 +14,7 @@ function GraphSection({ uploadId }) {
   const [graphText, setGraphText] = useState('');
 
   // UI mode
-  const [graphMode, setGraphMode] = useState('interactive'); // 'interactive' or 'png'
+  const [graphMode, setGraphMode] = useState('interactive');
 
   // Highlighting (only for antigen map)
   const [highlights, setHighlights] = useState([]);
@@ -33,7 +33,7 @@ function GraphSection({ uploadId }) {
   const addHighlightStyle = { ...buttonStyle, backgroundColor: '#ff9800' };
   const clearHighlightStyle = { ...buttonStyle, backgroundColor: '#ffc107' };
 
-  // Custom titles / axis labels
+  // Custom titles and axis labels
   const [customTitle, setCustomTitle] = useState('');
   const [xAxisTitle, setXAxisTitle] = useState('');
   const [yAxisTitle, setYAxisTitle] = useState('');
@@ -141,6 +141,8 @@ function GraphSection({ uploadId }) {
   };
 
   // --- Add Highlight (only for antigen map) ---
+  // I remember I had to do something similar for a previous project (ENGG1811)
+  // so I "copied" the logic and transformed it into JavaScript
   const handleAddHighlight = () => {
     if (!highlightX0 || !highlightX1) return toast.warning('Please enter both X0 and X1 to add highlight.');
     const newHL = { type: 'rect', x0: parseFloat(highlightX0), x1: parseFloat(highlightX1), y0: 0, y1: 1, fillcolor: 'rgba(255,255,0,0.3)', line: { width: 0 }, xref: 'x', yref: 'paper' };
@@ -155,7 +157,7 @@ function GraphSection({ uploadId }) {
     if (graphMode === 'png' && pngData) return <img src={pngData} alt="PNG Graph" style={{ maxWidth: '100%' }} />;
     if (!interactiveData) return <span style={{ color: '#888' }}>Click Generate Interactive Graph to load graph.</span>;
 
-    const layoutProps = { width: Math.min(1000, window.innerWidth - 40), height: 1000, margin: { l: 120, r: 50, t: 100, b: 120 }, annotations: [] };
+    const layoutProps = { width: Math.min(1200, window.innerWidth - 40), height: 750, margin: { l: 120, r: 50, t: 100, b: 120 }, annotations: [] };
 
     if (selectedGraph === 'heatmap') {
       if (!interactiveData.values?.length) return <span>No heatmap data available</span>;
@@ -240,7 +242,7 @@ function GraphSection({ uploadId }) {
         : [];
 
       const polyproteinHeight = 80;      
-      const antigenMapHeight = 650;     
+      const antigenMapHeight = 500;     
       const totalHeight = polyproteinHeight + antigenMapHeight + 120;
 
       const layout = {

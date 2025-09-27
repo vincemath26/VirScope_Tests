@@ -15,7 +15,7 @@ function Visualisation() {
   const [showPdfForm, setShowPdfForm] = useState(false);
   const [pdfStatus, setPdfStatus] = useState('');
   const [pdfUrl, setPdfUrl] = useState('');
-  const [activeTab, setActiveTab] = useState('csv'); // 'csv' or 'graph'
+  const [activeTab, setActiveTab] = useState('csv');
 
   const backendBaseURL = 'http://localhost:5000';
 
@@ -84,7 +84,8 @@ function Visualisation() {
 
           <button
             onClick={() => {
-              setPdfStatus('');   // reset status when opening the form
+              // reset status when opening the form
+              setPdfStatus('');
               setShowPdfForm(true);
             }}
             style={{

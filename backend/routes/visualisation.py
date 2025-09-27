@@ -1,5 +1,4 @@
 import os
-import io
 import pandas as pd
 from flask import Blueprint, current_app, jsonify, request, send_file
 from utils.visualisation import (
@@ -13,12 +12,10 @@ from utils.visualisation import (
     calculate_mean_rpk_difference,
     calculate_moving_sum,
     read_ev_polyprotein_uniprot_metadata,
-    generate_pdf
+    generate_pdf,
 )
-
 from utils.db import Session
 from models.models import Upload, GraphText
-import threading
 
 BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 visualisation_bp = Blueprint('visualisation', __name__)
