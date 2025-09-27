@@ -1,43 +1,60 @@
 import os
+import io
 from flask import Flask
+from flask_cors import CORS
+from dotenv import load_dotenv
 from models.models import Base
 from utils.db import engine
 from routes.auth import auth_bp
 from routes.collections import collection_bp
 from routes.visualisation import visualisation_bp
-from flask_cors import CORS
-from dotenv import load_dotenv
+from utils.r2 import fetch_upload_from_r2
 
+# ----------------- Load environment variables -----------------
+load_dotenv()
+
+# ----------------- Flask App Setup -----------------
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
-# Secret keys, I have an environment variable and a default key just in case
-# the default does not work.
-load_dotenv()
-
-# Custom password
+# Secret keys
 app.config["SITE_PASSWORD"] = os.getenv("SITE_PASSWORD")
-
-# Flask secret key
 app.secret_key = os.getenv("FLASK_SECRET_KEY", 'fallback_default_secret')
 
-# Upload config
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'csv'}
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# ----------------- Cache Configuration -----------------
+# Only cache folder is used for temporary storage; user uploads go to R2
+CACHE_FOLDER = os.path.join('uploads', 'cache')
+os.makedirs(CACHE_FOLDER, exist_ok=True)
+app.config['CACHE_FOLDER'] = CACHE_FOLDER
 
-# Create tables once at startup
+# ----------------- Database Initialization -----------------
 with engine.begin() as connection:
     Base.metadata.create_all(bind=connection)
 
+# ----------------- Basic Routes -----------------
 @app.route("/")
 def hello():
     return "Flask with PostgreSQL is working!"
 
+@app.route("/health")
+def health():
+    return {"status": "ok"}, 200
+
+# ----------------- Helper to read CSV from R2 -----------------
+def read_csv_from_r2(filename):
+    """
+    Fetch CSV from R2 and return a Pandas DataFrame.
+    """
+    file_bytes = fetch_upload_from_r2(filename)
+    return io.BytesIO(file_bytes)
+
+# ----------------- Register Blueprints -----------------
+# Make sure any route that reads uploads uses read_csv_from_r2
 app.register_blueprint(auth_bp)
 app.register_blueprint(collection_bp)
 app.register_blueprint(visualisation_bp)
 
+# ----------------- Entry Point -----------------
 if __name__ == "__main__":
-    app.run(debug=True)
+    # For local testing only; production will use gunicorn on Render
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))

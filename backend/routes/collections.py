@@ -169,12 +169,16 @@ def serve_csv(upload_id):
         with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
             temp_path = tmp_file.name
 
-        if not download_file_from_r2(r2_client, R2_BUCKET, upload.name, temp_path):
-            os.remove(temp_path)
-            return abort(404)
+        try:
+            if not download_file_from_r2(r2_client, R2_BUCKET, upload.name, temp_path):
+                os.remove(temp_path)
+                return abort(404)
 
-        response = send_file(temp_path, mimetype='text/csv')
-        return response
+            response = send_file(temp_path, mimetype='text/csv')
+            return response
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
 
 # -----------------------
@@ -182,13 +186,17 @@ def serve_csv(upload_id):
 # -----------------------
 @collection_bp.route('/delete-all-uploads', methods=['POST'])
 def delete_all_uploads_global():
+    """This deletes all uploads from R2 and the database. Consider restricting to admin."""
     with Session() as session:
         uploads = session.query(Upload).all()  # Grab all uploads, not just one user
         r2_client = get_r2_client()
         R2_BUCKET = current_app.config.get('R2_BUCKET_NAME')
 
         for upload in uploads:
-            delete_file_from_r2(r2_client, R2_BUCKET, upload.name)
+            try:
+                delete_file_from_r2(r2_client, R2_BUCKET, upload.name)
+            except Exception as e:
+                print(f"Failed to delete {upload.name} from R2: {e}")
             session.delete(upload)
         session.commit()
 

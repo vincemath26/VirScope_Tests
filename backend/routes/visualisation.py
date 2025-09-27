@@ -14,14 +14,20 @@ from utils.visualisation import (
     calculate_moving_sum,
     read_ev_polyprotein_uniprot_metadata,
     generate_pdf,
-    prepare_antigen_map_df,  # <-- new helper
+    prepare_antigen_map_df,
 )
 from utils.db import Session
 from models.models import Upload, GraphText
 from routes.auth import jwt_required
+from utils.r2 import fetch_upload_from_r2  # new helper for R2 fetches
 
-BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 visualisation_bp = Blueprint('visualisation', __name__)
+
+# ---------------- Helper to load upload from R2 ----------------
+def load_upload_csv(upload):
+    """Fetch CSV from R2 and return as pandas DataFrame."""
+    file_bytes = fetch_upload_from_r2(upload.name)
+    return pd.read_csv(io.BytesIO(file_bytes), sep=None, engine="python")
 
 # ---------------- PNG Routes ----------------
 
@@ -36,7 +42,8 @@ def species_counts_heatmap(upload_id):
             return jsonify({"error": "Upload not found"}), 404
         if upload.user_id != user_id:
             return jsonify({"error": "Forbidden"}), 403
-        df = pd.read_csv(os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name), sep=None, engine="python")
+
+    df = load_upload_csv(upload)
     return plot_species_rpk_heatmap(df, top_n_species=top_n_species)
 
 @visualisation_bp.route('/species_reactivity_stacked_barplot/png/<int:upload_id>', methods=['GET'])
@@ -50,7 +57,8 @@ def species_stacked_barplot(upload_id):
             return jsonify({"error": "Upload not found"}), 404
         if upload.user_id != user_id:
             return jsonify({"error": "Forbidden"}), 403
-        df = pd.read_csv(os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name), sep=None, engine="python")
+
+    df = load_upload_csv(upload)
     return plot_species_rpk_stacked_barplot(df, top_n_species=top_n_species)
 
 @visualisation_bp.route('/antigen_map/png/<int:upload_id>', methods=['GET'])
@@ -59,16 +67,14 @@ def antigen_map_png(upload_id):
     user_id = g.current_user_id
     win_size = int(request.args.get('win_size', 32))
     step_size = int(request.args.get('step_size', 4))
-
     with Session() as session:
         upload = session.get(Upload, upload_id)
         if not upload:
             return jsonify({"error": "Upload not found"}), 404
         if upload.user_id != user_id:
             return jsonify({"error": "Forbidden"}), 403
-        df = pd.read_csv(os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name), sep=None, engine="python")
 
-    # Use the new helper
+    df = load_upload_csv(upload)
     moving_sum_df, ev_df = prepare_antigen_map_df(upload_id, df, win_size, step_size, app=current_app)
     return plot_antigen_map(moving_sum_df, ev_df=ev_df)
 
@@ -85,7 +91,8 @@ def species_counts_json(upload_id):
             return jsonify({"error": "Upload not found"}), 404
         if upload.user_id != user_id:
             return jsonify({"error": "Forbidden"}), 403
-        df = pd.read_csv(os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name), sep=None, engine="python")
+
+    df = load_upload_csv(upload)
     df = compute_rpk(df)
     grouped = df.groupby(['taxon_species', 'sample_id'])['rpk'].mean().reset_index()
     heatmap_data = grouped.pivot(index='taxon_species', columns='sample_id', values='rpk').fillna(0)
@@ -109,7 +116,8 @@ def species_stacked_barplot_json(upload_id):
             return jsonify({"error": "Upload not found"}), 404
         if upload.user_id != user_id:
             return jsonify({"error": "Forbidden"}), 403
-        df = pd.read_csv(os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name), sep=None, engine="python")
+
+    df = load_upload_csv(upload)
     df = compute_rpk(df)
     grouped = df.groupby(['taxon_species', 'sample_id'])['rpk'].mean().reset_index()
     pivot_df = grouped.pivot(index='sample_id', columns='taxon_species', values='rpk').fillna(0)
@@ -142,9 +150,12 @@ def antigen_map_json(upload_id):
                 "error": "Upload not found"
             }), 404
         if upload.user_id != user_id:
-            return jsonify({"moving_sum": [], "window_start": [], "window_end": [], "ev_domains": [], "error": "Forbidden"}), 403
-        df = pd.read_csv(os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name), sep=None, engine="python")
+            return jsonify({
+                "moving_sum": [], "window_start": [], "window_end": [], "ev_domains": [],
+                "error": "Forbidden"
+            }), 403
 
+    df = load_upload_csv(upload)
     try:
         moving_sum_df, ev_df = prepare_antigen_map_df(upload_id, df, win_size, step_size, app=current_app)
         json_data = {
@@ -209,15 +220,11 @@ def generate_pdf_route(upload_id):
 
     import traceback
     try:
-        print(f"PDF generation payload: {payload}")
         graphs = payload.get("graphs", [])
         if not graphs:
             return {"error": "No graphs specified for PDF generation"}, 400
 
-        # Load upload CSV once
-        upload_path = os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name)
-        df = pd.read_csv(upload_path, sep=None, engine="python")
-
+        df = load_upload_csv(upload)
         from fpdf import FPDF
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
@@ -282,8 +289,6 @@ def generate_pdf_route(upload_id):
             elif gtype == "antigen_map":
                 win_size = int(g.get("win_size", 32))
                 step_size = int(g.get("step_size", 4))
-
-                # Use the new helper to avoid repeating BLAST/FASTA logic
                 moving_sum_df, ev_df = prepare_antigen_map_df(upload_id, df, win_size, step_size, app=current_app)
                 resp = plot_antigen_map(moving_sum_df, ev_df=ev_df, output_path=None)
                 img_bytes = get_bytes_from_response(resp)
@@ -319,7 +324,5 @@ def generate_pdf_route(upload_id):
         )
 
     except Exception as e:
-        print("=== PDF Generation Error Traceback ===")
         traceback.print_exc()
-        print("=====================================")
         return {"error": str(e)}, 500
