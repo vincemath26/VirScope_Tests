@@ -14,6 +14,18 @@ ALLOWED_EXTENSIONS = {'csv'}
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+# -----------------------
+# Helper: get user upload
+# -----------------------
+def get_user_upload(session, upload_id, user_id):
+    upload = session.get(Upload, upload_id)
+    if not upload or upload.user_id != user_id:
+        return None
+    return upload
+
+# -----------------------
+# Upload a new file
+# -----------------------
 @collection_bp.route('/upload', methods=['POST'])
 @jwt_required
 def upload_file():
@@ -45,6 +57,9 @@ def upload_file():
 
     return jsonify({"error": "File type not allowed"}), 400
 
+# -----------------------
+# List all uploads for user
+# -----------------------
 @collection_bp.route('/uploads', methods=['GET'])
 @jwt_required
 def list_uploads():
@@ -61,6 +76,9 @@ def list_uploads():
         ]
     return jsonify(uploads_data)
 
+# -----------------------
+# Rename upload
+# -----------------------
 @collection_bp.route('/upload/<int:upload_id>/rename', methods=['POST'])
 @jwt_required
 def rename_upload(upload_id):
@@ -69,11 +87,8 @@ def rename_upload(upload_id):
         return jsonify({"error": "New name is required"}), 400
 
     with Session() as session:
-        upload = session.get(Upload, upload_id)
+        upload = get_user_upload(session, upload_id, g.current_user_id)
         if not upload:
-            return jsonify({"error": "Upload not found"}), 404
-
-        if upload.user_id != g.current_user_id:
             return jsonify({"error": "Forbidden"}), 403
 
         ext = os.path.splitext(upload.name)[1]
@@ -95,15 +110,15 @@ def rename_upload(upload_id):
 
     return jsonify({"message": "File renamed successfully", "new_name": safe_name})
 
+# -----------------------
+# Delete single upload
+# -----------------------
 @collection_bp.route('/upload/<int:upload_id>', methods=['DELETE'])
 @jwt_required
 def delete_upload(upload_id):
     with Session() as session:
-        upload = session.get(Upload, upload_id)
+        upload = get_user_upload(session, upload_id, g.current_user_id)
         if not upload:
-            return jsonify({"error": "Upload not found"}), 404
-
-        if upload.user_id != g.current_user_id:
             return jsonify({"error": "Forbidden"}), 403
 
         filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name)
@@ -115,15 +130,15 @@ def delete_upload(upload_id):
 
     return jsonify({"message": "Upload deleted successfully"})
 
+# -----------------------
+# Serve CSV file
+# -----------------------
 @collection_bp.route('/uploads/csv/<int:upload_id>', methods=['GET'])
 @jwt_required
 def serve_csv(upload_id):
     with Session() as session:
-        upload = session.get(Upload, upload_id)
+        upload = get_user_upload(session, upload_id, g.current_user_id)
         if not upload:
-            return abort(404)
-
-        if upload.user_id != g.current_user_id:
             return jsonify({"error": "Forbidden"}), 403
 
         filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name)
@@ -132,6 +147,9 @@ def serve_csv(upload_id):
 
         return send_file(filepath, mimetype='text/csv')
 
+# -----------------------
+# Delete all uploads
+# -----------------------
 @collection_bp.route('/delete-all-uploads', methods=['POST'])
 @jwt_required
 def delete_all_uploads():

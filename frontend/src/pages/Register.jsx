@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import RegisterWarning from '../components/RegisterWarning';
@@ -15,6 +15,14 @@ function Register() {
   const [isHoveredSubmit, setIsHoveredSubmit] = useState(false);
 
   const navigate = useNavigate();
+
+  // Set axios Authorization header if token exists on mount
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    }
+  }, []);
 
   // =========================
   // Styles
@@ -167,6 +175,10 @@ function Register() {
         }
         localStorage.setItem('token', token);
         localStorage.setItem('user_id', user_id);
+
+        // Set default Authorization header for all future Axios requests
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+
         navigate('/dashboard');
       })
       .catch((error) => {

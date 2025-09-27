@@ -18,18 +18,30 @@ function Visualisation() {
   const [activeTab, setActiveTab] = useState('csv');
 
   const backendBaseURL = 'http://localhost:5000';
+  const token = localStorage.getItem('token');
+  const axiosConfig = {
+    headers: { Authorization: `Bearer ${token}` }
+  };
 
   useEffect(() => {
     const fetchFilename = async () => {
       try {
-        const response = await axios.get(`${backendBaseURL}/upload/${uploadId}`);
+        const response = await axios.get(`${backendBaseURL}/upload/${uploadId}`, axiosConfig);
         setFileName(response.data.name);
       } catch (err) {
-        console.error(err);
+        if (err.response?.status === 403) {
+          toast.error("You do not have permission to access this upload.");
+          navigate('/dashboard');
+        } else if (err.response?.status === 404) {
+          toast.error("Upload not found.");
+          navigate('/dashboard');
+        } else {
+          console.error(err);
+        }
       }
     };
     fetchFilename();
-  }, [uploadId]);
+  }, [uploadId, navigate]);
 
   const handlePdfSubmit = async (payload) => {
     setShowPdfForm(false);
@@ -38,7 +50,7 @@ function Visualisation() {
       const response = await axios.post(
         `${backendBaseURL}/generate_pdf/${uploadId}`,
         payload,
-        { responseType: 'blob' }
+        { ...axiosConfig, responseType: 'blob' }
       );
 
       const blob = new Blob([response.data], { type: 'application/pdf' });
@@ -53,19 +65,29 @@ function Visualisation() {
 
       setPdfStatus("PDF ready!");
     } catch (err) {
-      console.error(err);
-      setPdfStatus("Error generating PDF.");
+      if (err.response?.status === 403) {
+        toast.error("You do not have permission to generate PDF for this upload.");
+        navigate('/dashboard');
+      } else {
+        console.error(err);
+        setPdfStatus("Error generating PDF.");
+      }
     }
   };
 
   const handleDelete = async () => {
     try {
-      await axios.delete(`${backendBaseURL}/upload/${uploadId}`);
+      await axios.delete(`${backendBaseURL}/upload/${uploadId}`, axiosConfig);
       toast.success('Upload deleted successfully');
       navigate('/dashboard');
     } catch (err) {
-      console.error(err);
-      toast.error('Error deleting upload: ' + (err.response?.data?.error || err.message));
+      if (err.response?.status === 403) {
+        toast.error("You do not have permission to delete this upload.");
+        navigate('/dashboard');
+      } else {
+        console.error(err);
+        toast.error('Error deleting upload: ' + (err.response?.data?.error || err.message));
+      }
     }
   };
 
@@ -84,7 +106,6 @@ function Visualisation() {
 
           <button
             onClick={() => {
-              // reset status when opening the form
               setPdfStatus('');
               setShowPdfForm(true);
             }}

@@ -24,9 +24,17 @@ function FileReader({ uploadId }) {
     setCsvData([]);
     setHeaders([]);
 
-    fetch(`http://localhost:5000/uploads/csv/${uploadId}`)
+    const token = localStorage.getItem('token');
+
+    fetch(`http://localhost:5000/uploads/csv/${uploadId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
       .then((response) => {
         if (!response.ok) {
+          if (response.status === 403) throw new Error('You do not have permission to view this file.');
+          if (response.status === 404) throw new Error('File not found.');
           throw new Error('Network response not ok');
         }
         return response.text();
@@ -60,7 +68,6 @@ function FileReader({ uploadId }) {
             }
           },
           complete: () => {
-            // parsing complete, if less than MAX_ROWS, update state here
             if (tempData.length < MAX_ROWS) {
               setCsvData(tempData);
               setLoading(false);

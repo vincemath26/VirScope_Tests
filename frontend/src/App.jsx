@@ -54,10 +54,11 @@ function AppHeaders() {
         <Route path='/' element={<Landing />} />
         <Route path='/register' element={<Register />} />
         <Route path='/login' element={<Login />} />
+        
         <Route element={<Authenticated />}>
           <Route path='/dashboard' element={<Dashboard />} />
+          <Route path='/visualise/:uploadId' element={<Visualisation />} />
         </Route>
-        <Route path='/visualise/:uploadId' element={<Visualisation />} />
       </Routes>
     </>
   );

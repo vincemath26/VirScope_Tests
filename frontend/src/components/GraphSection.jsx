@@ -63,13 +63,17 @@ function GraphSection({ uploadId }) {
 
     setLoading(true);
     try {
+      const token = localStorage.getItem('token');
       let response;
+      const config = { headers: { Authorization: `Bearer ${token}` }, params: {} };
+      if (showInput) config.params.top_n_species = topN || (selectedGraph === 'heatmap' ? 20 : 10);
+
       if (selectedGraph === 'heatmap') {
-        response = await axios.get(`${backendBaseURL}/species_counts/json/${uploadId}`, { params: { top_n_species: topN || 20 } });
+        response = await axios.get(`${backendBaseURL}/species_counts/json/${uploadId}`, config);
       } else if (selectedGraph === 'barplot') {
-        response = await axios.get(`${backendBaseURL}/species_reactivity_stacked_barplot/json/${uploadId}`, { params: { top_n_species: topN || 10 } });
+        response = await axios.get(`${backendBaseURL}/species_reactivity_stacked_barplot/json/${uploadId}`, config);
       } else if (selectedGraph === 'antigen_map') {
-        response = await axios.get(`${backendBaseURL}/antigen_map/json/${uploadId}`, { params: { win_size: 32, step_size: 4 } });
+        response = await axios.get(`${backendBaseURL}/antigen_map/json/${uploadId}`, { ...config, params: { win_size: 32, step_size: 4 } });
       }
       setInteractiveData(response.data);
       setGraphMode('interactive');
@@ -90,8 +94,9 @@ function GraphSection({ uploadId }) {
 
     setLoading(true);
     try {
+      const token = localStorage.getItem('token');
       let response;
-      const config = { responseType: 'blob', params: {} };
+      const config = { responseType: 'blob', headers: { Authorization: `Bearer ${token}` }, params: {} };
       if (showInput) config.params.top_n_species = topN;
 
       if (selectedGraph === 'heatmap') {
@@ -122,7 +127,8 @@ function GraphSection({ uploadId }) {
 
   const fetchGraphText = async (graphType) => {
     try {
-      const response = await axios.get(`${backendBaseURL}/upload/${uploadId}/graph_text/${graphType}`);
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${backendBaseURL}/upload/${uploadId}/graph_text/${graphType}`, { headers: { Authorization: `Bearer ${token}` } });
       setGraphText(response.data.text || '');
     } catch (err) {
       console.error(err);
@@ -132,7 +138,8 @@ function GraphSection({ uploadId }) {
 
   const saveGraphText = async () => {
     try {
-      await axios.post(`${backendBaseURL}/upload/${uploadId}/graph_text/${selectedGraph}`, { text: graphText });
+      const token = localStorage.getItem('token');
+      await axios.post(`${backendBaseURL}/upload/${uploadId}/graph_text/${selectedGraph}`, { text: graphText }, { headers: { Authorization: `Bearer ${token}` } });
       toast.success('Text saved successfully');
     } catch (err) {
       console.error(err);
@@ -141,8 +148,6 @@ function GraphSection({ uploadId }) {
   };
 
   // --- Add Highlight (only for antigen map) ---
-  // I remember I had to do something similar for a previous project (ENGG1811)
-  // so I "copied" the logic and transformed it into JavaScript
   const handleAddHighlight = () => {
     if (!highlightX0 || !highlightX1) return toast.warning('Please enter both X0 and X1 to add highlight.');
     const newHL = { type: 'rect', x0: parseFloat(highlightX0), x1: parseFloat(highlightX1), y0: 0, y1: 1, fillcolor: 'rgba(255,255,0,0.3)', line: { width: 0 }, xref: 'x', yref: 'paper' };

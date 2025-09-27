@@ -6,10 +6,38 @@ import axios from 'axios';
 function Dashboard() {
   const navigate = useNavigate();
 
-  const dashboardContainer = { marginTop: '2%', padding: '2rem', display: 'flex', flexDirection: 'column' };
-  const upperRow = { display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', marginBottom: '2rem' };
-  const dashboardTitle = { margin: 0, padding: '0.5rem', fontFamily: 'Poppins, sans-serif', color: '#73D798', fontSize: '4rem', width: '70%', textAlign: 'center' };
-  const line = { width: '70%', border: '0', borderTop: '2px solid #333333', margin: '1rem 0' };
+  // =========================
+  // Styles
+  // =========================
+  const dashboardContainer = { 
+    marginTop: '2%', 
+    padding: '2rem', 
+    display: 'flex', 
+    flexDirection: 'column', 
+    alignItems: 'center' 
+  };
+
+  const upperRow = { 
+    display: 'flex', 
+    flexDirection: 'column', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    width: '100%',
+    maxWidth: '1200px',
+    marginBottom: '2rem'
+  };
+
+  const dashboardTitle = { 
+    margin: 0, 
+    padding: '0.5rem', 
+    fontFamily: 'Poppins, sans-serif', 
+    color: '#73D798', 
+    fontSize: 'clamp(2rem, 4vw, 4rem)', 
+    textAlign: 'center',
+    wordWrap: 'break-word'
+  };
+
+  const line = { width: '100%', border: '0', borderTop: '2px solid #333333', margin: '1rem 0' };
 
   const button = {
     color: '#000',
@@ -22,12 +50,13 @@ function Dashboard() {
     margin: '0',
     padding: '0 1rem',
     transition: 'all 0.3s ease',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    flexShrink: 0
   };
   const buttonHover = { ...button, backgroundColor: '#73D798', color: '#fff' };
   const buttonClick = { ...button, transform: 'scale(0.95)' };
 
-  const [isClicked, setIsClicked] = useState(false);
+  const [isClicked, setIsClicked] = useState(null);
   const [isHoveredUpload, setIsHoveredUpload] = useState(false);
   const [isHoveredSearch, setIsHoveredSearch] = useState(false);
 
@@ -50,6 +79,9 @@ function Dashboard() {
   const [editingId, setEditingId] = useState(null);
   const [newName, setNewName] = useState("");
 
+  // =========================
+  // Fetch files
+  // =========================
   const fetchFiles = (query = "") => {
     const token = localStorage.getItem('token');
     const userId = localStorage.getItem('user_id');
@@ -64,7 +96,13 @@ function Dashboard() {
       .finally(() => setIsLoading(false));
   };
 
-  useEffect(() => { fetchFiles(); }, []);
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    }
+    fetchFiles();
+  }, []);
 
   const handleSearch = () => { fetchFiles(searchQuery); };
   const handleNewVirScan = (newFile) => setVirscanFiles(prev => [...prev, newFile]);
@@ -90,6 +128,9 @@ function Dashboard() {
     });
   };
 
+  // =========================
+  // Card styles
+  // =========================
   const card = {
     border: '1px solid #ddd',
     borderRadius: '12px',
@@ -110,8 +151,7 @@ function Dashboard() {
   const cardHover = { transform: 'scale(1.05)', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' };
   const fileName = { fontWeight: 'bold', fontSize: '1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' };
   const fileDate = { fontSize: '0.9rem', color: '#666' };
-
-  const cardRow = { display: 'flex', justifyContent: 'center', gap: '15px', marginBottom: '1rem', flexWrap: 'nowrap' };
+  const cardRow = { display: 'flex', justifyContent: 'center', gap: '15px', flexWrap: 'wrap', marginBottom: '1rem' };
 
   const renderRows = () => {
     const rows = [];
@@ -163,25 +203,44 @@ function Dashboard() {
     ));
   };
 
+  // =========================
+  // Responsive form row
+  // =========================
+  const searchRowStyle = {
+    display: 'flex',
+    gap: '10px',
+    alignItems: 'center',
+    width: '100%',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginTop: '1rem'
+  };
+
+  const searchInputStyle = {
+    flexGrow: 2,
+    minWidth: '150px',
+    padding: '0.5rem',
+    borderRadius: '20px',
+    border: '3px solid #73D798',
+    fontSize: '1rem',
+    flexBasis: '250px'
+  };
+
+  // =========================
+  // Render
+  // =========================
   return (
     <div style={dashboardContainer}>
       <div style={upperRow}>
         <h1 style={dashboardTitle}>Welcome to VirScan! What do you want to analyse?</h1>
         <hr style={line} />
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', width: '70%' }}>
+        <div style={searchRowStyle}>
           <input
             type="text"
             placeholder="Search files..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              flexGrow: 2,
-              minWidth: '150px',
-              padding: '0.5rem',
-              borderRadius: '20px',
-              border: '3px solid #73D798',
-              fontSize: '1rem'
-            }}
+            style={searchInputStyle}
           />
           <button
             style={buttonStyle('search')}
@@ -202,16 +261,14 @@ function Dashboard() {
         </div>
       </div>
 
-      <div style={{ marginTop: '2rem' }}>
+      <div style={{ marginTop: '2rem', width: '100%', maxWidth: '1200px' }}>
         <h2 style={{ fontFamily: 'Poppins, sans-serif', marginBottom: '1rem' }}>Your Uploaded Files</h2>
         {isLoading ? <p>Loading VirScan Files...</p> :
           virscanFiles.length > 0 ? renderRows() : <p>No uploaded files found.</p>
         }
       </div>
 
-      <div style={{ display: isCreateVisible ? 'block' : 'none' }}>
-        <Create onClose={closePopup} onCreate={handleNewVirScan} />
-      </div>
+      {isCreateVisible && <Create onClose={closePopup} onCreate={handleNewVirScan} />}
     </div>
   );
 }
