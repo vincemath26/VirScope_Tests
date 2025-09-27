@@ -84,9 +84,9 @@ function Dashboard() {
   // =========================
   const fetchFiles = (query = "") => {
     const token = localStorage.getItem('token');
-    const userId = localStorage.getItem('user_id');
 
-    axios.get(`http://localhost:5000/uploads/${userId}`, { headers: { Authorization: `Bearer ${token}` } })
+    // 🔹 Fixed URL: remove userId, backend uses JWT
+    axios.get(`http://localhost:5000/uploads`, { headers: { Authorization: `Bearer ${token}` } })
       .then(response => {
         let files = response.data;
         if (query.trim()) files = files.filter(file => file.name.toLowerCase().includes(query.toLowerCase()));
@@ -101,6 +101,7 @@ function Dashboard() {
     if (token) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     }
+    setIsLoading(true); // ensure loader shows until fetch finishes
     fetchFiles();
   }, []);
 
@@ -240,6 +241,7 @@ function Dashboard() {
             placeholder="Search files..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
             style={searchInputStyle}
           />
           <button

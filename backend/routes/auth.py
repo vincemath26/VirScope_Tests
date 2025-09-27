@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, session, g
+from flask import Blueprint, request, jsonify, session, g, current_app
 from sqlalchemy.orm import Session as SqlAlchemySession
 from models.models import User
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -11,14 +11,13 @@ auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/check-site-password', methods=['POST'])
 def check_site_password():
-    from app import app
     data = request.get_json() or {}
     password = data.get('password')
 
     if not password:
         return jsonify({'error': 'Missing password'}), 400
 
-    site_password = app.config.get('SITE_PASSWORD')
+    site_password = current_app.config.get('SITE_PASSWORD')
 
     if password == site_password:
         exp_time = datetime.datetime.utcnow() + datetime.timedelta(hours=24)
@@ -27,21 +26,20 @@ def check_site_password():
             'iat': datetime.datetime.utcnow(),
             'exp': exp_time
         }
-        token = jwt.encode(payload, app.secret_key, algorithm='HS256')
+        token = jwt.encode(payload, current_app.secret_key, algorithm='HS256')
         return jsonify({'message': 'Access granted', 'token': token}), 200
 
     return jsonify({'error': 'Invalid site password'}), 401
 
 @auth_bp.route('/verify-site-token', methods=['POST'])
 def verify_site_token():
-    from app import app
     token = request.json.get('token')
 
     if not token:
         return jsonify({'error': 'Token missing'}), 400
 
     try:
-        decoded = jwt.decode(token, app.secret_key, algorithms=['HS256'])
+        decoded = jwt.decode(token, current_app.secret_key, algorithms=['HS256'])
         if decoded.get('site_access'):
             return jsonify({'valid': True}), 200
         return jsonify({'valid': False}), 401
@@ -52,7 +50,7 @@ def verify_site_token():
 
 @auth_bp.route('/users', methods=['GET'])
 def list_users():
-    from app import engine  # Import engine inside the function to avoid circular import
+    from app import engine  # lazy import inside function
     with SqlAlchemySession(engine) as db_session:
         users = db_session.query(User).all()
         users_data = [
@@ -68,7 +66,7 @@ def list_users():
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
-    from app import engine, app  # import app for secret_key
+    from app import engine  # lazy import engine
     data = request.get_json() or {}
 
     username = data.get('username')
@@ -92,7 +90,7 @@ def register():
         db_session.commit()
 
         # Generate JWT token for new user
-        token = jwt.encode({'user_id': new_user.user_id}, app.secret_key, algorithm='HS256')
+        token = jwt.encode({'user_id': new_user.user_id}, current_app.secret_key, algorithm='HS256')
 
     return jsonify({
         'message': 'User registered successfully',
@@ -102,7 +100,7 @@ def register():
 
 @auth_bp.route('/login', methods=['POST'])
 def login():
-    from app import engine, app  # Import engine inside the function to avoid circular import
+    from app import engine  # lazy import engine
     data = request.get_json() or {}
 
     # Add a log to see the received data
@@ -122,20 +120,17 @@ def login():
         if user and check_password_hash(user.password, password):
             # Generate JWT token and send it back in the response
             token = jwt.encode(
-                {'user_id': user.user_id}, app.secret_key, algorithm='HS256'
+                {'user_id': user.user_id}, current_app.secret_key, algorithm='HS256'
             )
             # Log the response being sent to the client
             print(f"Login successful. Sending token and user_id: {token}, {user.user_id}")
             return jsonify({'message': 'Login successful', 'token': token, 'user_id': user.user_id}), 200
 
     print("Invalid credentials or user not found")
-    print(f"Login successful for user_id: {user.user_id}")
     return jsonify({'error': 'Invalid credentials'}), 401
 
 @auth_bp.route('/logout', methods=['POST'])
 def logout():
-    from app import app  # Import app here to avoid circular import
-    
     # Get the token from the Authorization header
     token = request.headers.get('Authorization')
     if not token:
@@ -148,14 +143,14 @@ def logout():
 
     try:
         # If using JWT, decode it to validate and get user info
-        decoded_token = jwt.decode(token, app.secret_key, algorithms=['HS256'])
+        decoded_token = jwt.decode(token, current_app.secret_key, algorithms=['HS256'])
         user_id = decoded_token.get('user_id')
 
         if not user_id:
             return jsonify({'error': 'Invalid token: User ID not found'}), 401
         
-        # Do something with user_id if needed (e.g., remove from session)
-        session.pop('user_id', None)  # Optionally clear the session
+        # Optionally clear the session
+        session.pop('user_id', None)
 
         return jsonify({'message': 'Logout successful'}), 200
     except jwt.ExpiredSignatureError:
@@ -168,14 +163,13 @@ def logout():
 # Admin related code - deleting all users
 @auth_bp.route('/delete-all-users', methods=['POST'])
 def delete_all_users():
-    from app import engine  # Prevent circular import
+    from app import engine  # lazy import engine
     with SqlAlchemySession(engine) as db_session:
         deleted = db_session.query(User).delete()
         db_session.commit()
     return jsonify({'message': f'{deleted} user(s) deleted.'}), 200
 
 def jwt_required(f):
-    from app import app
     @wraps(f)
     def decorated_function(*args, **kwargs):
         token = request.headers.get('Authorization')
@@ -186,7 +180,7 @@ def jwt_required(f):
         token = token.replace('Bearer ', '', 1)
 
         try:
-            decoded = jwt.decode(token, app.secret_key, algorithms=['HS256'])
+            decoded = jwt.decode(token, current_app.secret_key, algorithms=['HS256'])
             user_id = decoded.get('user_id')
             if not user_id:
                 return jsonify({'error': 'Invalid token: user_id missing'}), 401

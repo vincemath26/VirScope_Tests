@@ -1,5 +1,8 @@
 # Ignore these please!
 
+# My .env file
+.env
+
 # Note Modules
 node_modules
 
