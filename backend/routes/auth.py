@@ -1,7 +1,8 @@
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, g
 from sqlalchemy.orm import Session as SqlAlchemySession
 from models.models import User
 from werkzeug.security import generate_password_hash, check_password_hash
+from functools import wraps
 import jwt
 import datetime
 
@@ -172,3 +173,32 @@ def delete_all_users():
         deleted = db_session.query(User).delete()
         db_session.commit()
     return jsonify({'message': f'{deleted} user(s) deleted.'}), 200
+
+def jwt_required(f):
+    from app import app
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        token = request.headers.get('Authorization')
+        if not token:
+            return jsonify({'error': 'Authorization token missing'}), 401
+
+        # Strip 'Bearer ' if present
+        token = token.replace('Bearer ', '', 1)
+
+        try:
+            decoded = jwt.decode(token, app.secret_key, algorithms=['HS256'])
+            user_id = decoded.get('user_id')
+            if not user_id:
+                return jsonify({'error': 'Invalid token: user_id missing'}), 401
+
+            # Attach user_id to flask.g for use in route
+            g.current_user_id = user_id
+
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+
+        return f(*args, **kwargs)
+
+    return decorated_function

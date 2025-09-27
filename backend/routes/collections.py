@@ -1,10 +1,11 @@
 import os
 import pandas as pd
 from datetime import datetime
-from flask import Blueprint, abort, request, jsonify, current_app, send_file
+from flask import Blueprint, abort, request, jsonify, current_app, send_file, g
 from werkzeug.utils import secure_filename
-from utils.db import engine, Session
+from utils.db import Session
 from models.models import Upload
+from routes.auth import jwt_required
 
 collection_bp = Blueprint('collection', __name__)
 
@@ -14,10 +15,9 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @collection_bp.route('/upload', methods=['POST'])
+@jwt_required
 def upload_file():
-    user_id = request.form.get('user_id')
-    if not user_id:
-        return jsonify({"error": "user_id is required"}), 400
+    user_id = g.current_user_id
 
     if 'file' not in request.files:
         return jsonify({"error": "No file part in the request"}), 400
@@ -27,21 +27,16 @@ def upload_file():
         return jsonify({"error": "No file selected"}), 400
 
     if file and allowed_file(file.filename):
-        # Handle custom name
         custom_name = request.form.get('custom_name', file.filename)
-        # Ensure .csv extension
         name_with_ext = secure_filename(custom_name)
         if not name_with_ext.lower().endswith('.csv'):
             name_with_ext += '.csv'
 
         filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], name_with_ext)
-
-        # Save file to disk
         file.save(filepath)
 
-        # Save to DB
         with Session() as session:
-            upload = Upload(name=name_with_ext, user_id=int(user_id))
+            upload = Upload(name=name_with_ext, user_id=user_id)
             session.add(upload)
             session.commit()
             upload_id = upload.upload_id
@@ -50,8 +45,10 @@ def upload_file():
 
     return jsonify({"error": "File type not allowed"}), 400
 
-@collection_bp.route('/uploads/<int:user_id>', methods=['GET'])
-def list_uploads(user_id):
+@collection_bp.route('/uploads', methods=['GET'])
+@jwt_required
+def list_uploads():
+    user_id = g.current_user_id
     with Session() as session:
         uploads = session.query(Upload).filter(Upload.user_id == user_id).all()
         uploads_data = [
@@ -65,6 +62,7 @@ def list_uploads(user_id):
     return jsonify(uploads_data)
 
 @collection_bp.route('/upload/<int:upload_id>/rename', methods=['POST'])
+@jwt_required
 def rename_upload(upload_id):
     new_name = request.json.get("new_name")
     if not new_name:
@@ -75,7 +73,9 @@ def rename_upload(upload_id):
         if not upload:
             return jsonify({"error": "Upload not found"}), 404
 
-        # Keep original extension
+        if upload.user_id != g.current_user_id:
+            return jsonify({"error": "Forbidden"}), 403
+
         ext = os.path.splitext(upload.name)[1]
         safe_name = secure_filename(new_name + ext)
 
@@ -96,11 +96,15 @@ def rename_upload(upload_id):
     return jsonify({"message": "File renamed successfully", "new_name": safe_name})
 
 @collection_bp.route('/upload/<int:upload_id>', methods=['DELETE'])
+@jwt_required
 def delete_upload(upload_id):
     with Session() as session:
         upload = session.get(Upload, upload_id)
         if not upload:
             return jsonify({"error": "Upload not found"}), 404
+
+        if upload.user_id != g.current_user_id:
+            return jsonify({"error": "Forbidden"}), 403
 
         filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name)
         if os.path.exists(filepath):
@@ -112,23 +116,30 @@ def delete_upload(upload_id):
     return jsonify({"message": "Upload deleted successfully"})
 
 @collection_bp.route('/uploads/csv/<int:upload_id>', methods=['GET'])
+@jwt_required
 def serve_csv(upload_id):
     with Session() as session:
         upload = session.get(Upload, upload_id)
         if not upload:
             return abort(404)
+
+        if upload.user_id != g.current_user_id:
+            return jsonify({"error": "Forbidden"}), 403
+
         filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], upload.name)
         if not os.path.exists(filepath):
             return abort(404)
+
         return send_file(filepath, mimetype='text/csv')
 
 @collection_bp.route('/delete-all-uploads', methods=['POST'])
+@jwt_required
 def delete_all_uploads():
+    user_id = g.current_user_id
     upload_dir = current_app.config['UPLOAD_FOLDER']
 
     with Session() as session:
-        uploads = session.query(Upload).all()
-
+        uploads = session.query(Upload).filter(Upload.user_id == user_id).all()
         for upload in uploads:
             filepath = os.path.join(upload_dir, upload.name)
             if os.path.exists(filepath):
@@ -136,8 +147,7 @@ def delete_all_uploads():
                     os.remove(filepath)
                 except Exception as e:
                     print(f"Failed to delete file {filepath}: {e}")
-
-        session.query(Upload).delete()
+            session.delete(upload)
         session.commit()
 
-    return jsonify({'message': 'All uploads and their files have been deleted.'}), 200
+    return jsonify({'message': 'All your uploads and their files have been deleted.'}), 200
