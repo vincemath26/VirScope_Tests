@@ -7,7 +7,7 @@ function Dashboard() {
   const navigate = useNavigate();
 
   // Backend URL from environment
-  const backendBaseURL = process.env.REACT_APP_URL;
+  const backendBaseURL = process.env.REACT_APP_BACKEND_URL;
 
   // =========================
   // Styles
