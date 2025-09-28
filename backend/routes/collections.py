@@ -11,7 +11,6 @@ from utils.collections import (
     allowed_file,
     get_user_upload,
     init_r2_client,
-    stream_upload_file_to_r2,
     download_file_from_r2,
     delete_file_from_r2
 )
@@ -40,7 +39,7 @@ def get_r2_client():
     return init_r2_client(r2_config)
 
 # -----------------------
-# Upload a new file (streamed)
+# Upload a new file (single-shot)
 # -----------------------
 @collection_bp.route('/upload', methods=['POST'])
 @jwt_required
@@ -63,11 +62,12 @@ def upload_file():
         try:
             r2_client = get_r2_client()
             R2_BUCKET = os.environ.get('R2_BUCKET_NAME')
-            success = stream_upload_file_to_r2(r2_client, R2_BUCKET, file, name_with_ext)
-            if not success:
-                return jsonify({"error": "Failed to upload file to R2"}), 500
-        except RuntimeError as e:
-            return jsonify({"error": str(e)}), 500
+            
+            # Upload entire file
+            file.seek(0)
+            r2_client.upload_fileobj(file, R2_BUCKET, name_with_ext)
+        except Exception as e:
+            return jsonify({"error": f"Failed to upload file to R2: {e}"}), 500
 
         with Session() as session:
             upload = Upload(name=name_with_ext, user_id=user_id)
@@ -78,6 +78,62 @@ def upload_file():
         return jsonify({"message": "File uploaded successfully", "upload_id": upload_id}), 201
 
     return jsonify({"error": "File type not allowed"}), 400
+
+# -----------------------
+# Chunked Upload Endpoint
+# -----------------------
+@collection_bp.route('/upload-chunk', methods=['POST'])
+@jwt_required
+def upload_chunk():
+    user_id = g.current_user_id
+    file = request.files.get('file')
+    if not file:
+        return jsonify({"error": "No file part in the request"}), 400
+
+    chunk_index = int(request.form.get('chunkIndex', 0))
+    total_chunks = int(request.form.get('totalChunks', 1))
+    custom_name = request.form.get('custom_name', file.filename)
+    upload_id = request.form.get('upload_id')
+
+    # Clean and ensure .csv extension
+    name_with_ext = secure_filename(custom_name)
+    if not name_with_ext.lower().endswith('.csv'):
+        name_with_ext += '.csv'
+
+    # Temporary file path per upload
+    temp_dir = tempfile.gettempdir()
+    temp_file_path = os.path.join(temp_dir, f"{name_with_ext}.upload")
+
+    try:
+        # Append chunk to temp file
+        with open(temp_file_path, 'ab') as f:
+            f.write(file.read())
+
+        # On first chunk, create database entry
+        if chunk_index == 0 and not upload_id:
+            with Session() as session:
+                upload = Upload(name=name_with_ext, user_id=user_id)
+                session.add(upload)
+                session.commit()
+                upload_id = upload.upload_id
+
+        # On last chunk, upload full file to R2
+        is_last_chunk = chunk_index + 1 == total_chunks
+        if is_last_chunk:
+            r2_client = get_r2_client()
+            R2_BUCKET = os.environ.get('R2_BUCKET_NAME')
+            with open(temp_file_path, 'rb') as f:
+                r2_client.upload_fileobj(f, R2_BUCKET, name_with_ext)
+            os.remove(temp_file_path)
+
+    except Exception as e:
+        return jsonify({"error": f"Chunk upload failed: {e}"}), 500
+
+    return jsonify({
+        "message": f"Chunk {chunk_index + 1}/{total_chunks} uploaded successfully",
+        "upload_id": upload_id,
+        "completed": is_last_chunk
+    })
 
 # -----------------------
 # List all uploads for user
@@ -122,14 +178,13 @@ def rename_upload(upload_id):
 
             with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
                 temp_path = tmp_file.name
+
             if not download_file_from_r2(r2_client, R2_BUCKET, upload.name, temp_path):
                 os.remove(temp_path)
                 return jsonify({"error": "Failed to download original file from R2"}), 500
 
             with open(temp_path, 'rb') as f:
-                if not stream_upload_file_to_r2(r2_client, R2_BUCKET, f, safe_name):
-                    os.remove(temp_path)
-                    return jsonify({"error": "Failed to upload renamed file to R2"}), 500
+                r2_client.upload_fileobj(f, R2_BUCKET, safe_name)
 
             delete_file_from_r2(r2_client, R2_BUCKET, upload.name)
             os.remove(temp_path)

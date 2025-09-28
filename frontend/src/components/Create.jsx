@@ -10,50 +10,58 @@ function Create({ onClose, onCreate }) {
   const [progress, setProgress] = useState(0);
 
   const backendURL = process.env.REACT_APP_BACKEND_URL;
+  const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
 
   const handleFileChange = (e) => setFile(e.target.files[0]);
   const handleCustomNameChange = (e) => setCustomName(e.target.value);
 
-  const handleUpload = async () => {
+  const handleChunkedUpload = async () => {
     if (!file) {
       toast.warning('Please select a file to upload.');
       return;
     }
 
     const token = localStorage.getItem('token');
-    const userId = localStorage.getItem('user_id');
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('user_id', userId);
-    if (customName) formData.append('custom_name', customName);
+    setUploading(true);
+    setProgress(0);
+
+    let uploadId = null;
 
     try {
-      setUploading(true);
-      setProgress(0);
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+        const start = chunkIndex * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, file.size);
+        const blob = file.slice(start, end);
 
-      const response = await axios.post(
-        `${backendURL}/upload`,
-        formData,
-        {
+        const formData = new FormData();
+        formData.append('file', blob);
+        formData.append('chunkIndex', chunkIndex);
+        formData.append('totalChunks', totalChunks);
+        if (chunkIndex === 0) {
+          formData.append('custom_name', customName || file.name);
+        }
+        if (uploadId) {
+          formData.append('upload_id', uploadId);
+        }
+
+        const response = await axios.post(`${backendURL}/upload-chunk`, formData, {
           headers: {
             'Content-Type': 'multipart/form-data',
             Authorization: `Bearer ${token}`
-          },
-          onUploadProgress: (progressEvent) => {
-            const percentCompleted = Math.round(
-              (progressEvent.loaded * 100) / progressEvent.total
-            );
-            setProgress(percentCompleted);
           }
-        }
-      );
+        });
 
-      setUploading(false);
-      setProgress(0);
+        if (!uploadId && response.data.upload_id) {
+          uploadId = response.data.upload_id; // get upload ID from first chunk
+        }
+
+        setProgress(Math.round(((chunkIndex + 1) / totalChunks) * 100));
+      }
 
       onCreate({
-        upload_id: response.data.upload_id,
+        upload_id: uploadId,
         name: customName || file.name,
         date_created: new Date().toISOString(),
         date_modified: new Date().toISOString()
@@ -63,11 +71,12 @@ function Create({ onClose, onCreate }) {
       setFile(null);
       setCustomName('');
       onClose();
-    } catch (error) {
+    } catch (err) {
+      console.error(err);
+      toast.error('Upload failed: ' + (err.response?.data?.error || err.message));
+    } finally {
       setUploading(false);
       setProgress(0);
-      console.error(error);
-      toast.error('Upload failed: ' + (error.response?.data?.error || error.message));
     }
   };
 
@@ -91,14 +100,13 @@ function Create({ onClose, onCreate }) {
           backgroundColor: 'white',
           padding: '40px',
           borderRadius: '16px',
-          width: '600px', // bigger width
+          width: '600px',
           maxWidth: '90%',
           boxShadow: '0 8px 20px rgba(0,0,0,0.3)'
         }}
       >
         <h2 style={{ marginTop: 0 }}>New Upload</h2>
 
-        {/* Styled File Upload Button */}
         <label
           style={{
             display: 'inline-block',
@@ -112,11 +120,7 @@ function Create({ onClose, onCreate }) {
           }}
         >
           {file ? file.name : 'Choose File'}
-          <input
-            type="file"
-            onChange={handleFileChange}
-            style={{ display: 'none' }}
-          />
+          <input type="file" onChange={handleFileChange} style={{ display: 'none' }} />
         </label>
 
         <input
@@ -171,7 +175,7 @@ function Create({ onClose, onCreate }) {
             Cancel
           </button>
           <button
-            onClick={handleUpload}
+            onClick={handleChunkedUpload}
             style={{
               padding: '10px 20px',
               borderRadius: '12px',
