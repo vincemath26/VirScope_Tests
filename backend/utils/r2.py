@@ -1,4 +1,3 @@
-# utils/r2.py
 import os
 import boto3
 from botocore.exceptions import ClientError
@@ -9,7 +8,7 @@ from botocore.exceptions import ClientError
 R2_ACCESS_KEY = os.getenv("R2_ACCESS_KEY_ID")
 R2_SECRET_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
 R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME")
-R2_ENDPOINT_URL = os.getenv("R2_ENDPOINT")  # e.g., "https://<account_id>.r2.cloudflarestorage.com"
+R2_ENDPOINT_URL = os.getenv("R2_ENDPOINT")
 
 # -----------------------
 # Create an R2 client using boto3 (S3 compatible)
@@ -25,10 +24,8 @@ r2_client = boto3.client(
 # Upload a file to R2 bucket
 # -----------------------
 def upload_file_to_r2(client, bucket_name: str, file_obj, object_name: str) -> bool:
-    """
-    Uploads a file-like object to R2 bucket.
-    """
     try:
+        file_obj.seek(0)
         client.upload_fileobj(file_obj, bucket_name, object_name)
         return True
     except ClientError as e:
@@ -39,9 +36,6 @@ def upload_file_to_r2(client, bucket_name: str, file_obj, object_name: str) -> b
 # Download a file from R2 bucket to local path
 # -----------------------
 def download_file_from_r2(client, bucket_name: str, object_name: str, local_path: str) -> bool:
-    """
-    Downloads an object from R2 bucket to a local file.
-    """
     try:
         client.download_file(bucket_name, object_name, local_path)
         return True
@@ -53,9 +47,6 @@ def download_file_from_r2(client, bucket_name: str, object_name: str, local_path
 # Delete a file from R2 bucket
 # -----------------------
 def delete_file_from_r2(client, bucket_name: str, object_name: str) -> bool:
-    """
-    Deletes an object from R2 bucket.
-    """
     try:
         client.delete_object(Bucket=bucket_name, Key=object_name)
         return True
@@ -67,9 +58,6 @@ def delete_file_from_r2(client, bucket_name: str, object_name: str) -> bool:
 # Fetches files from R2 bucket and returns bytes
 # -----------------------
 def fetch_upload_from_r2(upload_name: str) -> bytes:
-    """
-    Fetches a file from R2 bucket and returns its content as bytes.
-    """
     try:
         response = r2_client.get_object(Bucket=R2_BUCKET_NAME, Key=upload_name)
         return response['Body'].read()
@@ -80,12 +68,9 @@ def fetch_upload_from_r2(upload_name: str) -> bytes:
 # New streaming upload helper (multipart upload)
 # -----------------------
 def stream_upload_file_to_r2(client, bucket_name: str, file_obj, object_name: str, chunk_size=5*1024*1024) -> bool:
-    """
-    Uploads a file-like object to R2 in chunks using multipart upload.
-    chunk_size default: 5 MB
-    """
+    upload_id = None
     try:
-        # 1. Initiate multipart upload
+        file_obj.seek(0)
         mpu = client.create_multipart_upload(Bucket=bucket_name, Key=object_name)
         upload_id = mpu['UploadId']
         parts = []
@@ -95,7 +80,6 @@ def stream_upload_file_to_r2(client, bucket_name: str, file_obj, object_name: st
             data = file_obj.read(chunk_size)
             if not data:
                 break
-            # 2. Upload each part
             part = client.upload_part(
                 Bucket=bucket_name,
                 Key=object_name,
@@ -106,7 +90,6 @@ def stream_upload_file_to_r2(client, bucket_name: str, file_obj, object_name: st
             parts.append({'ETag': part['ETag'], 'PartNumber': part_number})
             part_number += 1
 
-        # 3. Complete multipart upload
         client.complete_multipart_upload(
             Bucket=bucket_name,
             Key=object_name,
@@ -114,11 +97,20 @@ def stream_upload_file_to_r2(client, bucket_name: str, file_obj, object_name: st
             MultipartUpload={'Parts': parts}
         )
         return True
+
     except ClientError as e:
         print(f"Failed to stream upload {object_name} to R2: {e}")
-        try:
-            # Attempt to abort the multipart upload if something went wrong
-            client.abort_multipart_upload(Bucket=bucket_name, Key=object_name, UploadId=upload_id)
-        except Exception:
-            pass
+        if upload_id:
+            try:
+                client.abort_multipart_upload(Bucket=bucket_name, Key=object_name, UploadId=upload_id)
+            except Exception:
+                pass
+        return False
+    except Exception as e:
+        print(f"Unexpected error during upload of {object_name}: {e}")
+        if upload_id:
+            try:
+                client.abort_multipart_upload(Bucket=bucket_name, Key=object_name, UploadId=upload_id)
+            except Exception:
+                pass
         return False

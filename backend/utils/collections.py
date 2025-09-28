@@ -66,7 +66,9 @@ def stream_upload_file_to_r2(r2_client, bucket, file_obj, object_name, chunk_siz
     Upload a file-like object to R2 in chunks using multipart upload.
     Default chunk_size: 5 MB
     """
+    upload_id = None
     try:
+        file_obj.seek(0)  # ensure pointer at start
         mpu = r2_client.create_multipart_upload(Bucket=bucket, Key=object_name)
         upload_id = mpu['UploadId']
         parts = []
@@ -96,10 +98,19 @@ def stream_upload_file_to_r2(r2_client, bucket, file_obj, object_name, chunk_siz
 
     except ClientError as e:
         print(f"Failed to stream upload {object_name} to R2: {e}")
-        try:
-            r2_client.abort_multipart_upload(Bucket=bucket, Key=object_name, UploadId=upload_id)
-        except Exception:
-            pass
+        if upload_id:
+            try:
+                r2_client.abort_multipart_upload(Bucket=bucket, Key=object_name, UploadId=upload_id)
+            except Exception:
+                pass
+        return False
+    except Exception as e:
+        print(f"Unexpected error during upload of {object_name}: {e}")
+        if upload_id:
+            try:
+                r2_client.abort_multipart_upload(Bucket=bucket, Key=object_name, UploadId=upload_id)
+            except Exception:
+                pass
         return False
 
 

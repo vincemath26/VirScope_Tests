@@ -1,42 +1,15 @@
 import os
-import pandas as pd
 import tempfile
-from datetime import datetime
 from flask import Blueprint, abort, request, jsonify, send_file, g
 from werkzeug.utils import secure_filename
 from utils.db import Session
 from models.models import Upload
 from routes.auth import jwt_required
-from utils.collections import (
-    allowed_file,
-    get_user_upload,
-    init_r2_client,
-    download_file_from_r2,
-    delete_file_from_r2
-)
+from utils.collections import allowed_file, get_user_upload
+from utils.r2 import r2_client, stream_upload_file_to_r2, download_file_from_r2, delete_file_from_r2
 
 collection_bp = Blueprint('collection', __name__)
 ALLOWED_EXTENSIONS = {'csv'}
-
-# -----------------------
-# Get R2 client safely
-# -----------------------
-def get_r2_client():
-    """Get a new R2 client instance using environment variables"""
-    r2_config = {
-        'R2_BUCKET_NAME': os.environ.get('R2_BUCKET_NAME'),
-        'R2_REGION': os.environ.get('R2_REGION'),
-        'R2_ENDPOINT': os.environ.get('R2_ENDPOINT'),
-        'R2_ACCESS_KEY_ID': os.environ.get('R2_ACCESS_KEY_ID'),
-        'R2_SECRET_ACCESS_KEY': os.environ.get('R2_SECRET_ACCESS_KEY')
-    }
-
-    # Check for missing values
-    missing = [k for k, v in r2_config.items() if not v]
-    if missing:
-        raise RuntimeError(f"Missing R2 environment variables: {', '.join(missing)}")
-
-    return init_r2_client(r2_config)
 
 # -----------------------
 # Upload a new file (single-shot)
@@ -60,12 +33,9 @@ def upload_file():
             name_with_ext += '.csv'
 
         try:
-            r2_client = get_r2_client()
-            R2_BUCKET = os.environ.get('R2_BUCKET_NAME')
-            
-            # Upload entire file
+            bucket = os.environ.get('R2_BUCKET_NAME')
             file.seek(0)
-            r2_client.upload_fileobj(file, R2_BUCKET, name_with_ext)
+            stream_upload_file_to_r2(r2_client, bucket, file, name_with_ext)
         except Exception as e:
             return jsonify({"error": f"Failed to upload file to R2: {e}"}), 500
 
@@ -95,21 +65,19 @@ def upload_chunk():
     custom_name = request.form.get('custom_name', file.filename)
     upload_id = request.form.get('upload_id')
 
-    # Clean and ensure .csv extension
     name_with_ext = secure_filename(custom_name)
     if not name_with_ext.lower().endswith('.csv'):
         name_with_ext += '.csv'
 
-    # Temporary file path per upload
     temp_dir = tempfile.gettempdir()
     temp_file_path = os.path.join(temp_dir, f"{name_with_ext}.upload")
 
     try:
-        # Append chunk to temp file
+        # Append current chunk to temp file
         with open(temp_file_path, 'ab') as f:
             f.write(file.read())
 
-        # On first chunk, create database entry
+        # Create DB entry on first chunk
         if chunk_index == 0 and not upload_id:
             with Session() as session:
                 upload = Upload(name=name_with_ext, user_id=user_id)
@@ -117,13 +85,12 @@ def upload_chunk():
                 session.commit()
                 upload_id = upload.upload_id
 
-        # On last chunk, upload full file to R2
+        # Upload to R2 on last chunk
         is_last_chunk = chunk_index + 1 == total_chunks
         if is_last_chunk:
-            r2_client = get_r2_client()
-            R2_BUCKET = os.environ.get('R2_BUCKET_NAME')
+            bucket = os.environ.get('R2_BUCKET_NAME')
             with open(temp_file_path, 'rb') as f:
-                r2_client.upload_fileobj(f, R2_BUCKET, name_with_ext)
+                stream_upload_file_to_r2(r2_client, bucket, f, name_with_ext)
             os.remove(temp_file_path)
 
     except Exception as e:
@@ -173,24 +140,20 @@ def rename_upload(upload_id):
         safe_name = secure_filename(new_name + ext)
 
         try:
-            r2_client = get_r2_client()
-            R2_BUCKET = os.environ.get('R2_BUCKET_NAME')
-
+            bucket = os.environ.get('R2_BUCKET_NAME')
             with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
                 temp_path = tmp_file.name
 
-            if not download_file_from_r2(r2_client, R2_BUCKET, upload.name, temp_path):
+            if not download_file_from_r2(r2_client, bucket, upload.name, temp_path):
                 os.remove(temp_path)
                 return jsonify({"error": "Failed to download original file from R2"}), 500
 
             with open(temp_path, 'rb') as f:
-                r2_client.upload_fileobj(f, R2_BUCKET, safe_name)
+                stream_upload_file_to_r2(r2_client, bucket, f, safe_name)
 
-            delete_file_from_r2(r2_client, R2_BUCKET, upload.name)
+            delete_file_from_r2(r2_client, bucket, upload.name)
             os.remove(temp_path)
 
-        except RuntimeError as e:
-            return jsonify({"error": str(e)}), 500
         except Exception as e:
             return jsonify({"error": f"Failed to rename file in R2: {e}"}), 500
 
@@ -211,11 +174,10 @@ def delete_upload(upload_id):
             return jsonify({"error": "Forbidden"}), 403
 
         try:
-            r2_client = get_r2_client()
-            R2_BUCKET = os.environ.get('R2_BUCKET_NAME')
-            delete_file_from_r2(r2_client, R2_BUCKET, upload.name)
-        except RuntimeError as e:
-            return jsonify({"error": str(e)}), 500
+            bucket = os.environ.get('R2_BUCKET_NAME')
+            delete_file_from_r2(r2_client, bucket, upload.name)
+        except Exception as e:
+            return jsonify({"error": f"Failed to delete file from R2: {e}"}), 500
 
         session.delete(upload)
         session.commit()
@@ -234,13 +196,11 @@ def serve_csv(upload_id):
             return jsonify({"error": "Forbidden"}), 403
 
         try:
-            r2_client = get_r2_client()
-            R2_BUCKET = os.environ.get('R2_BUCKET_NAME')
-
+            bucket = os.environ.get('R2_BUCKET_NAME')
             with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
                 temp_path = tmp_file.name
 
-            if not download_file_from_r2(r2_client, R2_BUCKET, upload.name, temp_path):
+            if not download_file_from_r2(r2_client, bucket, upload.name, temp_path):
                 os.remove(temp_path)
                 return abort(404)
 
@@ -259,18 +219,15 @@ def delete_all_uploads_global():
     with Session() as session:
         uploads = session.query(Upload).all()
         try:
-            r2_client = get_r2_client()
-            R2_BUCKET = os.environ.get('R2_BUCKET_NAME')
-
+            bucket = os.environ.get('R2_BUCKET_NAME')
             for upload in uploads:
                 try:
-                    delete_file_from_r2(r2_client, R2_BUCKET, upload.name)
+                    delete_file_from_r2(r2_client, bucket, upload.name)
                 except Exception as e:
                     print(f"Failed to delete {upload.name} from R2: {e}")
                 session.delete(upload)
             session.commit()
-
-        except RuntimeError as e:
+        except Exception as e:
             return jsonify({"error": str(e)}), 500
 
     return jsonify({'message': 'All uploads and their files have been deleted globally.'}), 200
