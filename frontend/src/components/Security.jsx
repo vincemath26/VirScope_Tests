@@ -3,7 +3,8 @@ import axios from 'axios';
 import { jwtDecode } from 'jwt-decode';
 
 function Security({ setSiteAuth }) {
-  const backendBaseURL = 'https://virscope.onrender.com';
+  const backendBaseURL = process.env.REACT_APP_BACKEND_BASE_URL;
+
   // States
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -89,7 +90,7 @@ function Security({ setSiteAuth }) {
       // Invalid token
       localStorage.removeItem('siteToken');
     }
-  }, [setSiteAuth]);
+  }, [setSiteAuth, backendBaseURL]);
 
   // Handle password submission
   const handleSubmit = async (e) => {

@@ -6,8 +6,8 @@ import axios from 'axios';
 function Dashboard() {
   const navigate = useNavigate();
 
-  // Backend URL
-  const backendBaseURL = 'https://virscope.onrender.com';
+  // Backend URL from environment
+  const backendBaseURL = process.env.REACT_APP_URL;
 
   // =========================
   // Styles

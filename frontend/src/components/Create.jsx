@@ -9,6 +9,8 @@ function Create({ onClose, onCreate }) {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
 
+  const backendURL = process.env.REACT_APP_BACKEND_URL;
+
   const handleFileChange = (e) => setFile(e.target.files[0]);
   const handleCustomNameChange = (e) => setCustomName(e.target.value);
 
@@ -31,7 +33,7 @@ function Create({ onClose, onCreate }) {
       setProgress(0);
 
       const response = await axios.post(
-        'https://virscope.onrender.com/upload',
+        `${backendURL}/upload`,
         formData,
         {
           headers: {

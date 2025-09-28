@@ -4,7 +4,7 @@ import axios from 'axios';
 import RegisterWarning from '../components/RegisterWarning';
 
 // Set backend base URL here
-const backendBaseURL = 'https://virscope.onrender.com';
+const backendBaseURL = process.env.REACT_APP_BACKEND_URL;
 
 function Register() {
   const [formData, setFormData] = useState({

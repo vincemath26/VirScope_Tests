@@ -4,7 +4,7 @@ import LoginWarning from '../components/LoginWarning';
 import axios from 'axios';
 
 // Backend URL
-const backendBaseURL = 'https://virscope.onrender.com';
+const backendBaseURL = process.env.REACT_APP_BACKEND_URL;
 
 function Login() {
   const [formData, setFormData] = useState({ username: '', password: '' });

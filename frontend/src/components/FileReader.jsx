@@ -11,6 +11,8 @@ function FileReader({ uploadId }) {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const backendURL = process.env.REACT_APP_BACKEND_URL;
+
   useEffect(() => {
     if (!uploadId) {
       setError('No upload ID provided');
@@ -26,7 +28,7 @@ function FileReader({ uploadId }) {
 
     const token = localStorage.getItem('token');
 
-    fetch(`https://virscope.onrender.com/uploads/csv/${uploadId}`, {
+    fetch(`${backendURL}/uploads/csv/${uploadId}`, {
       headers: {
         'Authorization': `Bearer ${token}`
       }
@@ -83,7 +85,7 @@ function FileReader({ uploadId }) {
         setError('Fetch error: ' + err.message);
         setLoading(false);
       });
-  }, [uploadId]);
+  }, [uploadId, backendURL]);
 
   if (!uploadId) {
     return <div>Please select an upload to preview.</div>;

@@ -4,7 +4,7 @@ import Plot from 'react-plotly.js';
 import { toast } from 'react-toastify';
 
 function GraphSection({ uploadId }) {
-  const backendBaseURL = 'https://virscope.onrender.com';
+  const backendBaseURL = process.env.REACT_APP_BACKEND_URL;
 
   const [selectedGraph, setSelectedGraph] = useState('');
   const [topN, setTopN] = useState('');

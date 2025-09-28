@@ -68,6 +68,9 @@ function Header() {
 
   const navigate = useNavigate();
 
+  // Backend base URL from environment variable
+  const backendBaseURL = process.env.REACT_APP_BACKEND_URL;
+
   // Check if the user is logged in by checking for a token
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -94,9 +97,9 @@ function Header() {
       },
     };
 
-    // Corrected URL
+    // Use environment variable instead of hardcoded URL
     axios
-      .post('https://virscope.onrender.com/logout', {}, config)
+      .post(`${backendBaseURL}/logout`, {}, config)
       .then((response) => {
         if (response) {
           localStorage.removeItem('token'); // Remove the token from localStorage

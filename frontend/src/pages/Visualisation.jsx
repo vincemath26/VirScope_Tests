@@ -18,7 +18,7 @@ function Visualisation() {
   const [activeTab, setActiveTab] = useState('csv');
 
   // Updated backend base URL
-  const backendBaseURL = 'https://virscope.onrender.com';
+  const backendBaseURL = process.env.REACT_APP_BACKEND_URL;
 
   const token = localStorage.getItem('token');
   const axiosConfig = {
