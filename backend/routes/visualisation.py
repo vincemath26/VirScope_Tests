@@ -187,7 +187,7 @@ def save_graph_text(upload_id, graph_type):
         session.commit()
     return jsonify({"message": "Graph text saved successfully"})
 
-# ---------------- PDF Routes ----------------
+# ---------------- PDF Route ----------------
 @visualisation_bp.route("/generate_pdf/<int:upload_id>", methods=["POST"])
 @jwt_required
 def generate_pdf_route(upload_id):
@@ -195,15 +195,45 @@ def generate_pdf_route(upload_id):
     payload = request.json
     if not payload:
         return {"error": "No payload provided"}, 400
+
+    from utils.visualisation import generate_pdf
+    from utils.r2 import fetch_upload_from_r2
+
+    with Session() as session:
+        upload = session.get(Upload, upload_id)
+        if not upload:
+            return {"error": "Upload not found"}, 404
+        if upload.user_id != user_id:
+            return {"error": "Forbidden"}, 403
+
+    # Ensure CSV exists locally in cache
+    cache_path = os.path.join(current_app.config['CACHE_FOLDER'], upload.name)
+    if not os.path.exists(cache_path):
+        try:
+            file_bytes = fetch_upload_from_r2(upload.name)
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            with open(cache_path, 'wb') as f:
+                f.write(file_bytes)
+        except FileNotFoundError:
+            return {"error": f"Upload file {upload.name} not found in R2"}, 404
+        except Exception as e:
+            return {"error": f"Failed to fetch upload from R2: {str(e)}"}, 500
+
     try:
+        # Generate PDF using the local cache CSV
         pdf_buf = generate_pdf(upload_id, payload, app=current_app, return_buffer=True)
+
         return send_file(
             pdf_buf,
             mimetype="application/pdf",
             as_attachment=True,
             download_name=f"upload_{upload_id}.pdf"
         )
+    except FileNotFoundError as fe:
+        return {"error": str(fe)}, 404
+    except PermissionError as pe:
+        return {"error": str(pe)}, 403
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return {"error": str(e)}, 500
+        return {"error": f"PDF generation failed: {str(e)}"}, 500

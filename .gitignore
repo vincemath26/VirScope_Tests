@@ -16,8 +16,8 @@ __pycache__/
 
 # Local uploads within backend (ignore all user uploads)
 backend/uploads/*
-!backend/uploads/cache/
-backend/uploads/cache/.gitkeep
+# !backend/uploads/cache/
+# backend/uploads/cache/.gitkeep
 
 # References
 r_code_ref

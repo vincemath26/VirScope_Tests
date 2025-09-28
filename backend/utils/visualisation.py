@@ -198,7 +198,7 @@ def prepare_antigen_map_df(upload_id, df, win_size=32, step_size=4, app=None):
     return moving_sum_df, ev_df
 
 # -----------------------
-# Generate PDF with R2 support
+# Generate PDF with R2 support (in-memory)
 # -----------------------
 def generate_pdf(upload_id, payload, app=None, return_buffer=False):
     from fpdf import FPDF

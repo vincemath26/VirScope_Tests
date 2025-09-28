@@ -26,6 +26,7 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", 'fallback_default_secret')
 CACHE_FOLDER = os.path.join('uploads', 'cache')
 os.makedirs(CACHE_FOLDER, exist_ok=True)
 app.config['CACHE_FOLDER'] = CACHE_FOLDER
+app.config['UPLOAD_FOLDER'] = CACHE_FOLDER
 
 # ----------------- Database Initialization -----------------
 with engine.begin() as connection:

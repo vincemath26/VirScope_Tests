@@ -1,6 +1,6 @@
 import os
 import tempfile
-from flask import Blueprint, abort, request, jsonify, send_file, g
+from flask import Blueprint, abort, request, jsonify, send_file, g, after_this_request
 from werkzeug.utils import secure_filename
 from utils.db import Session
 from models.models import Upload
@@ -197,7 +197,7 @@ def delete_upload(upload_id):
     return jsonify({"message": "Upload deleted successfully"})
 
 # -----------------------
-# Serve CSV file
+# Serve CSV file (fixed for Windows)
 # -----------------------
 @collection_bp.route('/uploads/csv/<int:upload_id>', methods=['GET'])
 @jwt_required
@@ -216,12 +216,21 @@ def serve_csv(upload_id):
                 os.remove(temp_path)
                 return abort(404)
 
-            response = send_file(temp_path, mimetype='text/csv')
-            return response
+            @after_this_request
+            def remove_file(response):
+                try:
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                except Exception as e:
+                    print(f"Failed to delete temp file: {e}")
+                return response
 
-        finally:
+            return send_file(temp_path, mimetype='text/csv', as_attachment=True, download_name=upload.name)
+
+        except Exception as e:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
+            return jsonify({"error": f"Failed to serve CSV: {e}"}), 500
 
 # -----------------------
 # Delete all uploads globally
