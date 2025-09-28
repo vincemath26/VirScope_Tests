@@ -11,7 +11,7 @@ from utils.collections import (
     allowed_file,
     get_user_upload,
     init_r2_client,
-    upload_file_to_r2,
+    stream_upload_file_to_r2,  # New streaming function
     download_file_from_r2,
     delete_file_from_r2
 )
@@ -26,7 +26,7 @@ def get_r2_client():
 
 
 # -----------------------
-# Upload a new file
+# Upload a new file (streamed)
 # -----------------------
 @collection_bp.route('/upload', methods=['POST'])
 @jwt_required
@@ -46,10 +46,10 @@ def upload_file():
         if not name_with_ext.lower().endswith('.csv'):
             name_with_ext += '.csv'
 
-        # Upload file to R2
+        # Stream file upload to R2
         r2_client = get_r2_client()
         R2_BUCKET = current_app.config.get('R2_BUCKET_NAME')
-        success = upload_file_to_r2(r2_client, R2_BUCKET, file, name_with_ext)
+        success = stream_upload_file_to_r2(r2_client, R2_BUCKET, file, name_with_ext)
         if not success:
             return jsonify({"error": "Failed to upload file to R2"}), 500
 
@@ -106,7 +106,7 @@ def rename_upload(upload_id):
         r2_client = get_r2_client()
         R2_BUCKET = current_app.config.get('R2_BUCKET_NAME')
 
-        # Rename in R2 by downloading to temp file, re-uploading, then deleting original
+        # Rename in R2 by downloading to temp file, re-uploading using streaming, then deleting original
         try:
             with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
                 temp_path = tmp_file.name
@@ -115,7 +115,7 @@ def rename_upload(upload_id):
                 return jsonify({"error": "Failed to download original file from R2"}), 500
 
             with open(temp_path, 'rb') as f:
-                if not upload_file_to_r2(r2_client, R2_BUCKET, f, safe_name):
+                if not stream_upload_file_to_r2(r2_client, R2_BUCKET, f, safe_name):
                     os.remove(temp_path)
                     return jsonify({"error": "Failed to upload renamed file to R2"}), 500
 

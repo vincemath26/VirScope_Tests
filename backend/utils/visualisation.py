@@ -34,6 +34,22 @@ def normalize_coordinates(df):
     return df
 
 # -----------------------
+# Helper: save plot to BytesIO or file
+# -----------------------
+def save_plot_to_file_or_buf(plt_obj, output_path=None, download_name=None):
+    if output_path:
+        plt_obj.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt_obj.close()
+        if download_name:
+            return send_file(output_path, mimetype='image/png', as_attachment=False, download_name=download_name)
+        return send_file(output_path, mimetype='image/png', as_attachment=False)
+    buf = io.BytesIO()
+    plt_obj.savefig(buf, format="png", dpi=300, bbox_inches='tight')
+    plt_obj.close()
+    buf.seek(0)
+    return send_file(buf, mimetype="image/png")
+
+# -----------------------
 # Species heatmap
 # -----------------------
 def plot_species_rpk_heatmap(df, top_n_species=20, output_path=None):
@@ -51,17 +67,7 @@ def plot_species_rpk_heatmap(df, top_n_species=20, output_path=None):
     plt.xlabel("Sample ID")
     plt.ylabel("Species")
     plt.tight_layout()
-
-    if output_path:
-        plt.savefig(output_path)
-        plt.close()
-        return send_file(output_path, mimetype='image/png', as_attachment=False, download_name='species_rpk_heatmap.png')
-
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png", dpi=300)
-    plt.close()
-    buf.seek(0)
-    return send_file(buf, mimetype="image/png")
+    return save_plot_to_file_or_buf(plt, output_path, download_name='species_rpk_heatmap.png')
 
 # -----------------------
 # Species stacked barplot
@@ -79,17 +85,7 @@ def plot_species_rpk_stacked_barplot(df, top_n_species=10, output_path=None):
     plt.ylabel("Total RPK", fontsize=14)
     plt.xticks(rotation=45, ha='right')
     plt.tight_layout()
-
-    if output_path:
-        plt.savefig(output_path)
-        plt.close()
-        return send_file(output_path, mimetype='image/png', as_attachment=False, download_name='species_rpk_stacked_barplot.png')
-
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png", dpi=300)
-    plt.close()
-    buf.seek(0)
-    return send_file(buf, mimetype="image/png")
+    return save_plot_to_file_or_buf(plt, output_path, download_name='species_rpk_stacked_barplot.png')
 
 # -----------------------
 # Write antigen map FASTA
@@ -97,7 +93,6 @@ def plot_species_rpk_stacked_barplot(df, top_n_species=10, output_path=None):
 def write_antigen_map_fasta(df, output_path):
     if not {'pep_id', 'pep_aa'}.issubset(df.columns):
         raise ValueError("DataFrame missing required columns 'pep_id' or 'pep_aa'")
-
     df_peptides = df[['pep_id', 'pep_aa']].drop_duplicates()
     with open(output_path, 'w') as f:
         for _, row in df_peptides.iterrows():
@@ -144,7 +139,6 @@ def read_blast(filepath):
 # Load upload from R2 or local
 # -----------------------
 def load_upload_file(upload_id, app=None):
-    """Returns a local temp file path for upload CSV (from R2 if configured)."""
     flask_app = app or current_app
     upload_folder = flask_app.config['UPLOAD_FOLDER']
     r2_bucket = flask_app.config.get('R2_BUCKET_NAME')
@@ -163,49 +157,39 @@ def load_upload_file(upload_id, app=None):
         tmp_file.close()
         return tmp_file.name
 
-    # fallback to local
     local_path = os.path.join(upload_folder, upload.name)
     if not os.path.exists(local_path):
         raise FileNotFoundError(f"Upload file {local_path} not found")
     return local_path
 
 # -----------------------
-# Helper function to simplify caching data for antigen map
+# Helper for antigen map caching
 # -----------------------
 def prepare_antigen_map_df(upload_id, df, win_size=32, step_size=4, app=None):
-    import os
-
     BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     UPLOAD_FOLDER = app.config['UPLOAD_FOLDER'] if app else None
 
-    # Setup cache paths
     cache_dir = os.path.join(UPLOAD_FOLDER, 'cache')
     os.makedirs(cache_dir, exist_ok=True)
     fasta_path = os.path.join(cache_dir, f"upload_{upload_id}_peptides.fasta")
     blast_output_path = os.path.join(cache_dir, f"upload_{upload_id}_blast_results.blast")
 
-    # Write FASTA
     write_antigen_map_fasta(df, fasta_path)
 
-    # BLAST DB
     blast_db_prefix = os.path.join(BACKEND_ROOT, 'data', 'raw_data', 'blast_databases', 'coxsackievirusB1_P08291_db')
     if not os.path.exists(blast_db_prefix + ".pin"):
         raise FileNotFoundError("BLAST database not found for antigen map generation")
 
-    # Run BLAST
     run_blastp(fasta_path, blast_db_prefix, blast_output_path)
     blast_df = read_blast(blast_output_path)
 
-    # Compute mean RPK difference and moving sum
     mean_rpk_df = calculate_mean_rpk_difference(df, blast_df)
     moving_sum_df = calculate_moving_sum(mean_rpk_df, win_size=win_size, step_size=step_size)
 
-    # Compute window_end for JSON output
     if not moving_sum_df.empty:
         moving_sum_df = moving_sum_df.groupby('window_start', as_index=False)['moving_sum'].sum()
         moving_sum_df['window_end'] = moving_sum_df['window_start'] + win_size - 1
 
-    # Polyprotein metadata
     polyprotein_path = os.path.join(BACKEND_ROOT, 'data', 'raw_data', 'coxsackievirusB1_P08291.tsv')
     if not os.path.exists(polyprotein_path):
         raise FileNotFoundError("Polyprotein metadata file not found for antigen map")
@@ -287,32 +271,7 @@ def generate_pdf(upload_id, payload, app=None, return_buffer=False):
         elif gtype == "antigen_map":
             win_size = int(g.get("win_size", 32))
             step_size = int(g.get("step_size", 4))
-
-            cache_dir = tempfile.mkdtemp()
-            fasta_path = os.path.join(cache_dir, f"upload_{upload_id}_peptides.fasta")
-            blast_output_path = os.path.join(cache_dir, f"upload_{upload_id}_blast_results.blast")
-
-            write_antigen_map_fasta(df, fasta_path)
-
-            blast_db_prefix = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                'data', 'raw_data', 'blast_databases', 'coxsackievirusB1_P08291_db'
-            )
-            if not os.path.exists(blast_db_prefix + ".pin"):
-                raise FileNotFoundError("BLAST database not found for antigen_map generation")
-
-            run_blastp(fasta_path, blast_db_prefix, blast_output_path)
-            blast_df = read_blast(blast_output_path)
-            mean_rpk_df = calculate_mean_rpk_difference(df, blast_df)
-            moving_sum_df = calculate_moving_sum(mean_rpk_df, win_size=win_size, step_size=step_size)
-
-            polyprotein_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                            'data', 'raw_data', 'coxsackievirusB1_P08291.tsv')
-            if not os.path.exists(polyprotein_path):
-                raise FileNotFoundError("Polyprotein metadata file not found for antigen_map")
-
-            ev_df = read_ev_polyprotein_uniprot_metadata(polyprotein_path)
-
+            moving_sum_df, ev_df = prepare_antigen_map_df(upload_id, df, win_size, step_size, app)
             resp = plot_antigen_map(moving_sum_df, ev_df=ev_df, output_path=None)
             img_bytes = get_bytes_from_response(resp)
 
