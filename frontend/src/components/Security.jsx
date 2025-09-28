@@ -3,7 +3,7 @@ import axios from 'axios';
 import { jwtDecode } from 'jwt-decode';
 
 function Security({ setSiteAuth }) {
-  const backendBaseURL = process.env.REACT_APP_BACKEND_BASE_URL;
+  const backendBaseURL = process.env.REACT_APP_BACKEND_URL;
 
   // States
   const [password, setPassword] = useState('');
