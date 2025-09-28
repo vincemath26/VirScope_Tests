@@ -62,12 +62,24 @@ def upload_chunk():
 
     chunk_index = int(request.form.get('chunkIndex', 0))
     total_chunks = int(request.form.get('totalChunks', 1))
-    custom_name = request.form.get('custom_name', file.filename)
     upload_id = request.form.get('upload_id')
 
-    name_with_ext = secure_filename(custom_name)
-    if not name_with_ext.lower().endswith('.csv'):
-        name_with_ext += '.csv'
+    # Fix: get the original name from the first chunk's custom_name, fallback to original filename
+    if chunk_index == 0:
+        custom_name = request.form.get('custom_name') or file.filename
+        name_with_ext = secure_filename(custom_name)
+        if not name_with_ext.lower().endswith('.csv'):
+            name_with_ext += '.csv'
+    else:
+        # For subsequent chunks, we must know the final file name from first chunk
+        if not upload_id:
+            return jsonify({"error": "Missing upload_id for subsequent chunk"}), 400
+        # Fetch upload name from DB
+        with Session() as session:
+            upload = session.get(Upload, int(upload_id))
+            if not upload or upload.user_id != user_id:
+                return jsonify({"error": "Upload not found or forbidden"}), 403
+            name_with_ext = upload.name
 
     temp_dir = tempfile.gettempdir()
     temp_file_path = os.path.join(temp_dir, f"{name_with_ext}.upload")
