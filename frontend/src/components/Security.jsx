@@ -9,6 +9,7 @@ function Security({ setSiteAuth }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false); // 👈 new state
 
   // Inline style
   const fullScreen = {
@@ -34,6 +35,11 @@ function Security({ setSiteAuth }) {
     fontFamily: 'Poppins, sans-serif',
   };
 
+  const inputWrapper = {
+    position: 'relative',
+    display: 'inline-block',
+  };
+
   const input = {
     fontSize: '1.5rem',
     padding: '0.5rem',
@@ -43,6 +49,19 @@ function Security({ setSiteAuth }) {
     width: '300px',
     marginBottom: '1rem',
     textAlign: 'center',
+  };
+
+  const toggleButton = {
+    position: 'absolute',
+    right: '10px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: 'none',
+    border: 'none',
+    color: '#333',
+    cursor: 'pointer',
+    fontSize: '0.9rem',
+    fontWeight: 'bold',
   };
 
   const button = {
@@ -71,10 +90,9 @@ function Security({ setSiteAuth }) {
 
     try {
       const decoded = jwtDecode(token);
-      const now = Date.now() / 1000; // current time in seconds
+      const now = Date.now() / 1000;
 
       if (decoded.exp && decoded.exp > now) {
-        // Optionally verify with backend
         axios
           .post(`${backendBaseURL}/verify-site-token`, { token })
           .then((res) => {
@@ -83,11 +101,9 @@ function Security({ setSiteAuth }) {
           })
           .catch(() => localStorage.removeItem('siteToken'));
       } else {
-        // Token expired
         localStorage.removeItem('siteToken');
       }
     } catch (e) {
-      // Invalid token
       localStorage.removeItem('siteToken');
     }
   }, [setSiteAuth, backendBaseURL]);
@@ -115,14 +131,24 @@ function Security({ setSiteAuth }) {
       <div style={leftColumn}>
         <h1 style={title}>Enter Site Password</h1>
         <form onSubmit={handleSubmit}>
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={input}
-            disabled={loading}
-          />
+          <div style={inputWrapper}>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              style={input}
+              disabled={loading}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              style={toggleButton}
+              tabIndex={-1} // so it doesn’t mess with form navigation
+            >
+              {showPassword ? 'Hide' : 'Show'}
+            </button>
+          </div>
           <br />
           <button
             type="submit"

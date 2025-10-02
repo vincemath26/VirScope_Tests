@@ -247,15 +247,16 @@ function GraphSection({ uploadId }) {
         : [];
 
       const polyproteinHeight = 80;      
-      const antigenMapHeight = 500;     
+      const antigenMapHeight = 700;     
       const totalHeight = polyproteinHeight + antigenMapHeight + 120;
 
       const layout = {
         ...layoutProps,
         height: totalHeight,
+        dragmode: 'zoom',
         yaxis: { visible: false, showticklabels: false, showline: false, zeroline: false, domain: [1 - polyproteinHeight / totalHeight, 1] },
         xaxis: { visible: false, matches: 'x2' },
-        yaxis2: { title: { text: yAxisTitle || 'Moving Sum', font: { size: 16 } }, automargin: true, domain: [0, 1 - polyproteinHeight / totalHeight] },
+        yaxis2: { title: { text: yAxisTitle || 'Moving Sum', font: { size: 16 } }, automargin: true, domain: [0, 1 - polyproteinHeight / totalHeight], fixedrange: false },
         xaxis2: { title: { text: xAxisTitle || 'Position in sequence (aa)', font: { size: 16 } }, side: 'bottom', automargin: true, showline: true, showticklabels: true, anchor: 'y2', domain: [0, 1] },
         shapes: [...polyproteinShapes, ...highlights],
         annotations: [...mainTitleAnnotation, ...polyproteinAnnotations],

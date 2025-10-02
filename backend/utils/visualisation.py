@@ -13,22 +13,19 @@ from utils.db import Session
 from models.models import GraphText
 from utils.collections import init_r2_client, download_file_from_r2
 
+# Import functions from enterovirus.py
 from utils.viruses.enterovirus import (
+    compute_rpk,
+    melt_new_dataset,
     calculate_mean_rpk_difference,
     calculate_moving_sum,
     plot_antigen_map,
     read_ev_polyprotein_uniprot_metadata,
-    plot_ev_polyprotein,
 )
 
 # -----------------------
-# RPK helper
+# Helper: normalize coordinates
 # -----------------------
-def compute_rpk(df, abundance_col='abundance', sample_col='sample_id'):
-    df = df.copy()
-    df['rpk'] = df.groupby(sample_col)[abundance_col].transform(lambda x: x / x.sum() * 1e5)
-    return df
-
 def normalize_coordinates(df):
     df['start'], df['end'] = np.minimum(df['start'], df['end']), np.maximum(df['start'], df['end'])
     return df
@@ -100,39 +97,38 @@ def write_antigen_map_fasta(df, output_path):
     return output_path
 
 # -----------------------
-# Run BLAST
+# Run DIAMOND instead of BLAST
 # -----------------------
-def run_blastp(fasta_path, blast_db_path, blast_output_path):
+def run_diamond(fasta_path, diamond_db_path, diamond_output_path):
     cmd = [
+        "diamond",
         "blastp",
-        "-task", "blastp-short",
-        "-query", fasta_path,
-        "-db", blast_db_path,
-        "-outfmt", "6 qaccver saccver pident nident length evalue bitscore mismatch gapopen qstart qend sstart send qseq sseq ppos stitle frames",
-        "-evalue", "0.01",
-        "-word_size", "2",
-        "-out", blast_output_path
+        "--query", fasta_path,
+        "--db", diamond_db_path,
+        "--out", diamond_output_path,
+        "--outfmt", "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
+        "--evalue", "0.01",
+        "--word-size", "2"
     ]
     try:
         subprocess.run(cmd, check=True)
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"BLAST failed: {e}")
+        raise RuntimeError(f"DIAMOND failed: {e}")
 
 # -----------------------
-# Read BLAST
+# Read DIAMOND output
 # -----------------------
 def read_blast(filepath):
     columns = [
-        "qaccver", "saccver", "pident", "nident", "length", "evalue", "bitscore",
-        "mismatch", "gapopen", "qstart", "qend", "sstart", "send",
-        "qseq", "sseq", "ppos", "stitle", "frames"
+        "qseqid", "sseqid", "pident", "length", "mismatch", "gapopen",
+        "qstart", "qend", "sstart", "send", "evalue", "bitscore"
     ]
     try:
         df = pd.read_csv(filepath, sep="\t", header=None, names=columns)
     except Exception as e:
-        raise ValueError(f"Failed to read BLAST file: {e}")
+        raise ValueError(f"Failed to read DIAMOND file: {e}")
     df = df.drop_duplicates()
-    df = df.rename(columns={'sstart': 'start', 'send': 'end', 'qaccver': 'seqid'})
+    df = df.rename(columns={'sstart': 'start', 'send': 'end', 'qseqid': 'seqid'})
     return normalize_coordinates(df)
 
 # -----------------------
@@ -163,6 +159,14 @@ def load_upload_file(upload_id, app=None):
     return local_path
 
 # -----------------------
+# Load CSV and reshape if new format
+# -----------------------
+def load_csv_as_long(upload_path):
+    df = pd.read_csv(upload_path, sep=None, engine="python")
+    df = melt_new_dataset(df)
+    return df
+
+# -----------------------
 # Helper for antigen map caching
 # -----------------------
 def prepare_antigen_map_df(upload_id, df, win_size=32, step_size=4, app=None):
@@ -172,16 +176,16 @@ def prepare_antigen_map_df(upload_id, df, win_size=32, step_size=4, app=None):
     cache_dir = os.path.join(UPLOAD_FOLDER, 'cache')
     os.makedirs(cache_dir, exist_ok=True)
     fasta_path = os.path.join(cache_dir, f"upload_{upload_id}_peptides.fasta")
-    blast_output_path = os.path.join(cache_dir, f"upload_{upload_id}_blast_results.blast")
+    diamond_output_path = os.path.join(cache_dir, f"upload_{upload_id}_diamond_results.blast")
 
     write_antigen_map_fasta(df, fasta_path)
 
-    blast_db_prefix = os.path.join(BACKEND_ROOT, 'data', 'raw_data', 'blast_databases', 'coxsackievirusB1_P08291_db')
-    if not os.path.exists(blast_db_prefix + ".pin"):
-        raise FileNotFoundError("BLAST database not found for antigen map generation")
+    diamond_db_path = os.path.join(BACKEND_ROOT, 'data', 'raw_data', 'blast_databases', 'coxsackievirusB1_P08291_db.dmnd')
+    if not os.path.exists(diamond_db_path):
+        raise FileNotFoundError("DIAMOND database not found for antigen map generation")
 
-    run_blastp(fasta_path, blast_db_prefix, blast_output_path)
-    blast_df = read_blast(blast_output_path)
+    run_diamond(fasta_path, diamond_db_path, diamond_output_path)
+    blast_df = read_blast(diamond_output_path)
 
     mean_rpk_df = calculate_mean_rpk_difference(df, blast_df)
     moving_sum_df = calculate_moving_sum(mean_rpk_df, win_size=win_size, step_size=step_size)
@@ -212,6 +216,11 @@ def generate_pdf(upload_id, payload, app=None, return_buffer=False):
     upload_path = load_upload_file(upload_id, app)
     df = pd.read_csv(upload_path, sep=None, engine="python")
 
+    # Convert wide format to long if needed
+    if 'taxon_species' not in df.columns and 'Species' in df.columns:
+        id_cols = ['sample_id'] if 'sample_id' in df.columns else []
+        df = df.melt(id_vars=id_cols, var_name='taxon_species', value_name='rpk')
+
     def get_graph_text(graph_type):
         with Session() as session:
             gt = session.query(GraphText).filter_by(upload_id=upload_id, graph_type=graph_type).first()
@@ -224,13 +233,11 @@ def generate_pdf(upload_id, payload, app=None, return_buffer=False):
             tmp.flush()
             tmp.close()
             return tmp.name
-        except Exception:
+        finally:
             try:
-                tmp.close()
+                os.unlink(tmp.name)
             except Exception:
                 pass
-            os.unlink(tmp.name)
-            raise
 
     def get_bytes_from_response(resp):
         if isinstance(resp, (bytes, bytearray)):

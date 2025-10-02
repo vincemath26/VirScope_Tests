@@ -8,13 +8,14 @@ from utils.visualisation import (
     plot_species_rpk_stacked_barplot,
     plot_antigen_map,
     write_antigen_map_fasta,
-    run_blastp,
+    run_diamond,  # <-- replaced run_blastp
     read_blast,
     calculate_mean_rpk_difference,
     calculate_moving_sum,
     read_ev_polyprotein_uniprot_metadata,
     generate_pdf,
     prepare_antigen_map_df,
+    melt_new_dataset,
 )
 from utils.db import Session
 from models.models import Upload, GraphText
@@ -27,7 +28,9 @@ visualisation_bp = Blueprint('visualisation', __name__)
 def load_upload_csv(upload):
     """Fetch CSV from R2 and return as pandas DataFrame."""
     file_bytes = fetch_upload_from_r2(upload.name)
-    return pd.read_csv(io.BytesIO(file_bytes), sep=None, engine="python")
+    df = pd.read_csv(io.BytesIO(file_bytes), sep=None, engine="python")
+    df = melt_new_dataset(df)
+    return df
 
 # ---------------- Helper to check upload permissions ----------------
 def get_upload_or_forbidden(session, upload_id, user_id):
@@ -195,9 +198,6 @@ def generate_pdf_route(upload_id):
     payload = request.json
     if not payload:
         return {"error": "No payload provided"}, 400
-
-    from utils.visualisation import generate_pdf
-    from utils.r2 import fetch_upload_from_r2
 
     with Session() as session:
         upload = session.get(Upload, upload_id)

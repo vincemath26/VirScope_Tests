@@ -22,11 +22,41 @@ def load_file_from_r2(bucket_name, object_name, sep="\t"):
     return df
 
 # -----------------------
+# RPK helper for new datasets
+# -----------------------
+def compute_rpk(df, abundance_col='abundance', sample_col='sample_id'):
+    df = df.copy()
+    df['rpk'] = df.groupby(sample_col)[abundance_col].transform(lambda x: x / x.sum() * 1e5)
+    return df
+
+def normalize_coordinates(df):
+    df['start'], df['end'] = np.minimum(df['start'], df['end']), np.maximum(df['start'], df['end'])
+    return df
+
+# -----------------------
+# Wide-to-long helper for new dataset
+# -----------------------
+def melt_new_dataset(df):
+    required_cols = {'u_pep_id', 'pep_id', 'pos_start', 'pos_end', 'UniProt_acc', 
+                     'pep_aa', 'taxon_genus', 'taxon_species', 'gene_symbol', 'product'}
+    if required_cols.issubset(df.columns):
+        # Columns that are not metadata are sample measurements
+        sample_cols = [c for c in df.columns if c not in required_cols]
+        if sample_cols:
+            df_long = df.melt(
+                id_vars=list(required_cols),
+                value_vars=sample_cols,
+                var_name='sample_id',
+                value_name='abundance'
+            )
+            return df_long
+    return df
+
+# -----------------------
 # RPK difference calculation
 # -----------------------
 def calculate_mean_rpk_difference(df, blast_df, sample_id_col='sample_id', condition_col='Condition', pep_id_col='pep_id', abundance_col='abundance'):
-    df = df.copy()
-    df['rpk'] = df.groupby(sample_id_col)[abundance_col].transform(lambda x: x / x.sum() * 100000)
+    df = compute_rpk(df, abundance_col=abundance_col, sample_col=sample_id_col)
     df['mean_rpk_per_peptide'] = df.groupby([condition_col, pep_id_col])['rpk'].transform('mean')
 
     mean_rpk_cc = df.pivot_table(
@@ -43,7 +73,10 @@ def calculate_mean_rpk_difference(df, blast_df, sample_id_col='sample_id', condi
         'Control': 'mean_rpk_per_pepControl'
     })
 
-    mean_rpk_cc = mean_rpk_cc[(mean_rpk_cc['mean_rpk_per_pepCase'] != 0) | (mean_rpk_cc['mean_rpk_per_pepControl'] != 0)]
+    mean_rpk_cc = mean_rpk_cc[
+        (mean_rpk_cc['mean_rpk_per_pepCase'] != 0) |
+        (mean_rpk_cc['mean_rpk_per_pepControl'] != 0)
+    ]
 
     merged = blast_df.merge(mean_rpk_cc, left_on='seqid', right_on=pep_id_col, how='left')
     merged['mean_rpk_difference'] = merged['mean_rpk_per_pepCase'] - merged['mean_rpk_per_pepControl']
@@ -59,7 +92,7 @@ def calculate_moving_sum(df, value_column='mean_rpk_difference', win_size=4, ste
     for _, row in df.iterrows():
         start, end = row['start'], row['end']
         if (end - start + 1) >= win_size:
-            for win_start in range(start, end - win_size + 2, step_size):
+            for win_start in range(int(start), int(end - win_size + 2), step_size):
                 win_end = win_start + win_size - 1
                 overlap = df[(df['start'] <= win_start) & (df['end'] >= win_end)]
                 moving_sum = overlap[value_column].sum()
@@ -100,7 +133,7 @@ def plot_antigen_map(moving_sum_df, ev_df=None, output_path=None):
     plot_df['Control'] = plot_df['moving_sum'].clip(upper=0)
 
     x_min, x_max = plot_df['window_start'].min(), plot_df['window_end'].max()
-    x_full = np.arange(x_min, x_max + 1)
+    x_full = np.arange(int(x_min), int(x_max) + 1)
     x_mid_int = plot_df['x_mid'].round().astype(int)
 
     case_series = pd.Series(0, index=x_full)
