@@ -24,7 +24,7 @@ RUN apt-get update && \
 # -----------------------------
 # 4. Install DIAMOND
 # -----------------------------
-RUN wget https://github.com/bbuchfink/diamond/releases/download/v3.9.9/diamond-linux64.tar.gz -O /tmp/diamond.tar.gz && \
+RUN wget https://github.com/bbuchfink/diamond/releases/download/v2.1.14/diamond-linux64.tar.gz -O /tmp/diamond.tar.gz && \
     mkdir -p /usr/local/diamond && \
     tar -xzf /tmp/diamond.tar.gz -C /usr/local/diamond && \
     rm /tmp/diamond.tar.gz
