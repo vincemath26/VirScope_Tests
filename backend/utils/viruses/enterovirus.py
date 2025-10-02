@@ -26,6 +26,10 @@ def load_file_from_r2(bucket_name, object_name, sep="\t"):
 # -----------------------
 def compute_rpk(df, abundance_col='abundance', sample_col='sample_id'):
     df = df.copy()
+    if abundance_col not in df.columns:
+        # fallback: pick the first non-id numeric column as abundance
+        numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
+        abundance_col = [c for c in numeric_cols if c != sample_col][0] if numeric_cols else abundance_col
     df['rpk'] = df.groupby(sample_col)[abundance_col].transform(lambda x: x / x.sum() * 1e5)
     return df
 
@@ -43,6 +47,9 @@ def melt_new_dataset(df):
         # Columns that are not metadata are sample measurements
         sample_cols = [c for c in df.columns if c not in required_cols]
         if sample_cols:
+            # Ensure 'abundance' column does not exist yet
+            if 'abundance' in df.columns:
+                df = df.rename(columns={'abundance': 'abundance_orig'})
             df_long = df.melt(
                 id_vars=list(required_cols),
                 value_vars=sample_cols,
