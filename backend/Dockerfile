@@ -37,13 +37,13 @@ WORKDIR /app
 # -----------------------------
 # 6. Copy and install Python dependencies
 # -----------------------------
-COPY backend/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # -----------------------------
 # 7. Copy backend code
 # -----------------------------
-COPY backend/ /app/
+COPY . /app/
 
 # -----------------------------
 # 8. Expose port and default command
