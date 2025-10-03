@@ -1,211 +1,154 @@
-import subprocess
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import seaborn as sns
 import pandas as pd
 import numpy as np
 import io
-import os
 import tempfile
+import os
 from flask import send_file, current_app
-from utils.db import Session
-from models.models import GraphText
 from utils.collections import init_r2_client, download_file_from_r2
-
-# Import functions from enterovirus.py
-from utils.viruses.enterovirus import (
-    compute_rpk,
-    melt_new_dataset,
-    calculate_mean_rpk_difference,
-    calculate_moving_sum,
-    plot_antigen_map,
-    read_ev_polyprotein_uniprot_metadata,
-)
+from utils.viruses.enterovirus import prepare_antigen_map_df
+from utils.db import Session
+from utils.r2 import R2_ACCESS_KEY, R2_SECRET_KEY, R2_ENDPOINT_URL, fetch_upload_from_r2
+import boto3
+from models.models import Upload, GraphText
 
 # -----------------------
-# Helper: normalize coordinates
+# Calculation helpers
 # -----------------------
+def compute_rpk(df, abundance_col='abundance', sample_col='sample_id'):
+    df = df.copy()
+    df['rpk'] = df.groupby(sample_col)[abundance_col].transform(lambda x: x / x.sum() * 1e5)
+    return df
+
 def normalize_coordinates(df):
     df['start'], df['end'] = np.minimum(df['start'], df['end']), np.maximum(df['start'], df['end'])
     return df
 
 # -----------------------
-# Helper: save plot to BytesIO or file
+# Save plot helper
 # -----------------------
-def save_plot_to_file_or_buf(plt_obj, output_path=None, download_name=None):
+def save_plot_to_file_or_buf(plt_obj, output_path=None):
     if output_path:
         plt_obj.savefig(output_path, dpi=300, bbox_inches='tight')
         plt_obj.close()
-        if download_name:
-            return send_file(output_path, mimetype='image/png', as_attachment=False, download_name=download_name)
         return send_file(output_path, mimetype='image/png', as_attachment=False)
     buf = io.BytesIO()
-    plt_obj.savefig(buf, format="png", dpi=300, bbox_inches='tight')
+    plt_obj.savefig(buf, format='png', dpi=300, bbox_inches='tight')
     plt_obj.close()
     buf.seek(0)
     return send_file(buf, mimetype="image/png")
 
 # -----------------------
-# Species heatmap
+# Plot RPK stacked bar
 # -----------------------
-def plot_species_rpk_heatmap(df, top_n_species=20, output_path=None):
-    df = compute_rpk(df)
-    df = df.dropna(subset=['taxon_species', 'sample_id', 'rpk'])
-    grouped = df.groupby(['taxon_species', 'sample_id'])['rpk'].mean().reset_index()
-    heatmap_data = grouped.pivot(index='taxon_species', columns='sample_id', values='rpk').fillna(0)
-    top_species = heatmap_data.sum(axis=1).nlargest(top_n_species).index
-    heatmap_data = heatmap_data.loc[top_species]
-    heatmap_data = heatmap_data[sorted(heatmap_data.columns)]
+def plot_rpk_stacked_barplot(df, top_n_species=10, output_path=None):
+    top_species = df.groupby('taxon_species')['rpk'].sum().nlargest(top_n_species).index
+    plot_df = df[df['taxon_species'].isin(top_species)].copy()
+    pivot_df = plot_df.pivot(index='sample_id', columns='taxon_species', values='rpk').fillna(0)
+    pivot_df = pivot_df[top_species]
 
-    plt.figure(figsize=(18, 10))
-    sns.heatmap(heatmap_data, cmap="magma", annot=False, cbar_kws={'label': 'Total Peptide RPK'})
-    plt.title("Species-Level Peptide Expression Heatmap (RPK)")
-    plt.xlabel("Sample ID")
-    plt.ylabel("Species")
-    plt.tight_layout()
-    return save_plot_to_file_or_buf(plt, output_path, download_name='species_rpk_heatmap.png')
-
-# -----------------------
-# Species stacked barplot
-# -----------------------
-def plot_species_rpk_stacked_barplot(df, top_n_species=10, output_path=None):
-    df = compute_rpk(df)
-    df = df.dropna(subset=['taxon_species', 'rpk'])
-    top_species = df.groupby('taxon_species')['rpk'].mean().nlargest(top_n_species).index
-    df_filtered = df[df['taxon_species'].isin(top_species)]
-    df_pivoted = df_filtered.pivot_table(index='sample_id', columns='taxon_species', values='rpk', aggfunc='sum').fillna(0)
-
-    df_pivoted.plot(kind='bar', stacked=True, figsize=(14, 8), colormap='viridis')
-    plt.title("Stacked Bar Plot of Species Reactivity (RPK) Across Samples", fontsize=16)
-    plt.xlabel("Sample ID", fontsize=14)
-    plt.ylabel("Total RPK", fontsize=14)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    pivot_df.plot(kind='bar', stacked=True, ax=ax)
+    ax.set_ylabel("RPK")
+    ax.set_xlabel("Sample ID")
+    ax.set_title("Stacked Bar Plot of RPK per Species")
     plt.xticks(rotation=45, ha='right')
     plt.tight_layout()
-    return save_plot_to_file_or_buf(plt, output_path, download_name='species_rpk_stacked_barplot.png')
+    return save_plot_to_file_or_buf(plt, output_path)
 
 # -----------------------
-# Write antigen map FASTA
+# Plot RPK heatmap
 # -----------------------
-def write_antigen_map_fasta(df, output_path):
-    if not {'pep_id', 'pep_aa'}.issubset(df.columns):
-        raise ValueError("DataFrame missing required columns 'pep_id' or 'pep_aa'")
-    df_peptides = df[['pep_id', 'pep_aa']].drop_duplicates()
-    with open(output_path, 'w') as f:
-        for _, row in df_peptides.iterrows():
-            f.write(f">{row['pep_id']}\n{row['pep_aa']}\n")
-    return output_path
+def plot_rpk_heatmap(df, output_path=None):
+    pivot_df = df.pivot(index='taxon_species', columns='sample_id', values='rpk').fillna(0)
+    fig, ax = plt.subplots(figsize=(12, 8))
+    cax = ax.imshow(pivot_df, aspect='auto', cmap='viridis')
+    ax.set_xticks(np.arange(len(pivot_df.columns)))
+    ax.set_xticklabels(pivot_df.columns, rotation=45, ha='right')
+    ax.set_yticks(np.arange(len(pivot_df.index)))
+    ax.set_yticklabels(pivot_df.index)
+    fig.colorbar(cax, ax=ax, label='RPK')
+    plt.tight_layout()
+    return save_plot_to_file_or_buf(plt, output_path)
 
 # -----------------------
-# Run DIAMOND instead of BLAST
+# Plot BLAST peptide alignment
 # -----------------------
-def run_diamond(fasta_path, diamond_db_path, diamond_output_path):
+def plot_blast_peptide_alignment(query_fasta, db_path, output_path):
+    import subprocess
+    tmp_out = tempfile.NamedTemporaryFile(delete=False, suffix=".tsv").name
     cmd = [
-        "diamond",
-        "blastp",
-        "--query", fasta_path,
-        "--db", diamond_db_path,
-        "--out", diamond_output_path,
-        "--outfmt", "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
-        "--evalue", "0.01",
-        "--word-size", "2"
+        "diamond", "blastp",
+        "--query", query_fasta,
+        "--db", db_path,
+        "--out", tmp_out,
+        "--outfmt", "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore"
     ]
-    try:
-        subprocess.run(cmd, check=True)
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"DIAMOND failed: {e}")
+    subprocess.run(cmd, check=True)
+    df = pd.read_csv(tmp_out, sep='\t', header=None)
+    os.unlink(tmp_out)
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    for _, row in df.iterrows():
+        ax.plot([row[6], row[7]], [row[0], row[0]], color='blue', linewidth=2)
+    ax.set_xlabel("Query amino acid position")
+    ax.set_ylabel("Peptide")
+    ax.set_title("BLAST Peptide Alignments")
+    plt.tight_layout()
+    return save_plot_to_file_or_buf(plt, output_path)
 
 # -----------------------
-# Read DIAMOND output
+# Helper: Initialise R2 client
 # -----------------------
-def read_blast(filepath):
-    columns = [
-        "qseqid", "sseqid", "pident", "length", "mismatch", "gapopen",
-        "qstart", "qend", "sstart", "send", "evalue", "bitscore"
-    ]
-    try:
-        df = pd.read_csv(filepath, sep="\t", header=None, names=columns)
-    except Exception as e:
-        raise ValueError(f"Failed to read DIAMOND file: {e}")
-    df = df.drop_duplicates()
-    df = df.rename(columns={'sstart': 'start', 'send': 'end', 'qseqid': 'seqid'})
-    return normalize_coordinates(df)
-
-# -----------------------
-# Load upload from R2 or local
-# -----------------------
-def load_upload_file(upload_id, app=None):
+def init_r2_client(app=None):
     flask_app = app or current_app
-    upload_folder = flask_app.config['UPLOAD_FOLDER']
-    r2_bucket = flask_app.config.get('R2_BUCKET_NAME')
+    access_key = flask_app.config.get("R2_ACCESS_KEY_ID") or R2_ACCESS_KEY
+    secret_key = flask_app.config.get("R2_SECRET_ACCESS_KEY") or R2_SECRET_KEY
+    endpoint = flask_app.config.get("R2_ENDPOINT") or R2_ENDPOINT_URL
 
-    from models.models import Upload
+    if not access_key or not secret_key or not endpoint:
+        raise RuntimeError("R2 credentials or endpoint not configured")
+
+    return boto3.client(
+        "s3",
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        endpoint_url=endpoint
+    )
+
+# -----------------------
+# Helper: load uploaded file directly from R2
+# -----------------------
+def load_upload_file(upload_id, app=None) -> str:
+    flask_app = app or current_app
+    r2_bucket = flask_app.config.get("R2_BUCKET_NAME")
+    if not r2_bucket:
+        raise FileNotFoundError("R2_BUCKET not configured for app — cannot fetch uploads")
+
     with Session() as session:
         upload = session.get(Upload, upload_id)
         if not upload:
-            raise FileNotFoundError(f"Upload {upload_id} not found")
+            raise FileNotFoundError(f"Upload {upload_id} not found in DB")
+    file_name = upload.name
 
-    if r2_bucket:
-        r2_client = init_r2_client(flask_app.config)
+    try:
+        r2 = init_r2_client(flask_app)
+        resp = r2.get_object(Bucket=r2_bucket, Key=file_name)
         tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
-        if not download_file_from_r2(r2_client, r2_bucket, upload.name, tmp_file.name):
-            raise FileNotFoundError(f"Could not download {upload.name} from R2")
+        tmp_file.write(resp['Body'].read())
         tmp_file.close()
         return tmp_file.name
-
-    local_path = os.path.join(upload_folder, upload.name)
-    if not os.path.exists(local_path):
-        raise FileNotFoundError(f"Upload file {local_path} not found")
-    return local_path
+    except Exception as e:
+        raise FileNotFoundError(f"Upload file {file_name} not found in R2: {e}")
 
 # -----------------------
-# Load CSV and reshape if new format
-# -----------------------
-def load_csv_as_long(upload_path):
-    df = pd.read_csv(upload_path, sep=None, engine="python")
-    df = melt_new_dataset(df)
-    return df
-
-# -----------------------
-# Helper for antigen map caching
-# -----------------------
-def prepare_antigen_map_df(upload_id, df, win_size=32, step_size=4, app=None):
-    BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    UPLOAD_FOLDER = app.config['UPLOAD_FOLDER'] if app else None
-
-    cache_dir = os.path.join(UPLOAD_FOLDER, 'cache')
-    os.makedirs(cache_dir, exist_ok=True)
-    fasta_path = os.path.join(cache_dir, f"upload_{upload_id}_peptides.fasta")
-    diamond_output_path = os.path.join(cache_dir, f"upload_{upload_id}_diamond_results.blast")
-
-    write_antigen_map_fasta(df, fasta_path)
-
-    diamond_db_path = os.path.join(BACKEND_ROOT, 'data', 'raw_data', 'blast_databases', 'coxsackievirusB1_P08291_db.dmnd')
-    if not os.path.exists(diamond_db_path):
-        raise FileNotFoundError("DIAMOND database not found for antigen map generation")
-
-    run_diamond(fasta_path, diamond_db_path, diamond_output_path)
-    blast_df = read_blast(diamond_output_path)
-
-    mean_rpk_df = calculate_mean_rpk_difference(df, blast_df)
-    moving_sum_df = calculate_moving_sum(mean_rpk_df, win_size=win_size, step_size=step_size)
-
-    if not moving_sum_df.empty:
-        moving_sum_df = moving_sum_df.groupby('window_start', as_index=False)['moving_sum'].sum()
-        moving_sum_df['window_end'] = moving_sum_df['window_start'] + win_size - 1
-
-    polyprotein_path = os.path.join(BACKEND_ROOT, 'data', 'raw_data', 'coxsackievirusB1_P08291.tsv')
-    if not os.path.exists(polyprotein_path):
-        raise FileNotFoundError("Polyprotein metadata file not found for antigen map")
-    ev_df = read_ev_polyprotein_uniprot_metadata(polyprotein_path)
-
-    return moving_sum_df, ev_df
-
-# -----------------------
-# Generate PDF with R2 support (in-memory)
+# Generate PDF
 # -----------------------
 def generate_pdf(upload_id, payload, app=None, return_buffer=False):
     from fpdf import FPDF
+
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
 
@@ -215,11 +158,6 @@ def generate_pdf(upload_id, payload, app=None, return_buffer=False):
 
     upload_path = load_upload_file(upload_id, app)
     df = pd.read_csv(upload_path, sep=None, engine="python")
-
-    # Convert wide format to long if needed
-    if 'taxon_species' not in df.columns and 'Species' in df.columns:
-        id_cols = ['sample_id'] if 'sample_id' in df.columns else []
-        df = df.melt(id_vars=id_cols, var_name='taxon_species', value_name='rpk')
 
     def get_graph_text(graph_type):
         with Session() as session:
@@ -233,11 +171,13 @@ def generate_pdf(upload_id, payload, app=None, return_buffer=False):
             tmp.flush()
             tmp.close()
             return tmp.name
-        finally:
+        except Exception:
             try:
-                os.unlink(tmp.name)
+                tmp.close()
             except Exception:
                 pass
+            os.unlink(tmp.name)
+            raise
 
     def get_bytes_from_response(resp):
         if isinstance(resp, (bytes, bytearray)):
@@ -267,19 +207,49 @@ def generate_pdf(upload_id, payload, app=None, return_buffer=False):
 
         if gtype == "heatmap":
             top_n = int(g.get("topN", 20))
-            resp = plot_species_rpk_heatmap(df, top_n_species=top_n, output_path=None)
+            df = compute_rpk(df)
+            resp = plot_rpk_heatmap(df, output_path=None)
             img_bytes = get_bytes_from_response(resp)
 
         elif gtype == "barplot":
             top_n = int(g.get("topN", 10))
-            resp = plot_species_rpk_stacked_barplot(df, top_n_species=top_n, output_path=None)
+            df = compute_rpk(df)
+            resp = plot_rpk_stacked_barplot(df, top_n_species=top_n, output_path=None)
             img_bytes = get_bytes_from_response(resp)
 
         elif gtype == "antigen_map":
             win_size = int(g.get("win_size", 32))
             step_size = int(g.get("step_size", 4))
-            moving_sum_df, ev_df = prepare_antigen_map_df(upload_id, df, win_size, step_size, app)
+
+            diamond_db_path = current_app.config.get(
+                "COXSACKIE_DB_PATH",
+                os.path.join(current_app.root_path, "data", "blast_databases", "coxsackievirusB1_P08291_db.dmnd")
+            )
+
+            cache_folder = current_app.config.get(
+                "CACHE_FOLDER",
+                os.path.join(current_app.root_path, "uploads", "cache")
+            )
+            os.makedirs(cache_folder, exist_ok=True)
+            current_app.logger.info(f"Antigen map cache folder: {cache_folder}")
+
+            moving_sum_df, ev_df, _ = prepare_antigen_map_df(
+                upload_id,
+                df,
+                diamond_db_path=diamond_db_path,
+                win_size=win_size,
+                step_size=step_size,
+                cache_folder=cache_folder
+            )
+
             resp = plot_antigen_map(moving_sum_df, ev_df=ev_df, output_path=None)
+            img_bytes = get_bytes_from_response(resp)
+
+        elif gtype == "blast_alignment":
+            query_fasta = g.get("query_fasta")
+            db_path = g.get("db_path")
+            output_path = g.get("output_path")
+            resp = plot_blast_peptide_alignment(query_fasta, db_path, output_path)
             img_bytes = get_bytes_from_response(resp)
 
         else:

@@ -2,20 +2,18 @@ import io
 import os
 import pandas as pd
 from flask import Blueprint, current_app, jsonify, request, send_file, g
+
+# ----------------------- Imports -----------------------
 from utils.visualisation import (
     compute_rpk,
-    plot_species_rpk_heatmap,
-    plot_species_rpk_stacked_barplot,
-    plot_antigen_map,
-    write_antigen_map_fasta,
-    run_diamond,  # <-- replaced run_blastp
-    read_blast,
-    calculate_mean_rpk_difference,
-    calculate_moving_sum,
-    read_ev_polyprotein_uniprot_metadata,
+    plot_rpk_stacked_barplot,
+    plot_rpk_heatmap,
     generate_pdf,
+    load_upload_file
+)
+from utils.viruses.enterovirus import (
     prepare_antigen_map_df,
-    melt_new_dataset,
+    plot_antigen_map,
 )
 from utils.db import Session
 from models.models import Upload, GraphText
@@ -23,14 +21,6 @@ from routes.auth import jwt_required
 from utils.r2 import fetch_upload_from_r2
 
 visualisation_bp = Blueprint('visualisation', __name__)
-
-# ---------------- Helper to load upload from R2 ----------------
-def load_upload_csv(upload):
-    """Fetch CSV from R2 and return as pandas DataFrame."""
-    file_bytes = fetch_upload_from_r2(upload.name)
-    df = pd.read_csv(io.BytesIO(file_bytes), sep=None, engine="python")
-    df = melt_new_dataset(df)
-    return df
 
 # ---------------- Helper to check upload permissions ----------------
 def get_upload_or_forbidden(session, upload_id, user_id):
@@ -51,8 +41,8 @@ def species_counts_heatmap(upload_id):
         upload, err_resp, status = get_upload_or_forbidden(session, upload_id, user_id)
         if err_resp:
             return err_resp, status
-    df = load_upload_csv(upload)
-    return plot_species_rpk_heatmap(df, top_n_species=top_n_species)
+    df = pd.read_csv(load_upload_file(upload_id, current_app), sep=None, engine="python")
+    return plot_rpk_heatmap(df, output_path=None)
 
 @visualisation_bp.route('/species_reactivity_stacked_barplot/png/<int:upload_id>', methods=['GET'])
 @jwt_required
@@ -63,8 +53,8 @@ def species_stacked_barplot(upload_id):
         upload, err_resp, status = get_upload_or_forbidden(session, upload_id, user_id)
         if err_resp:
             return err_resp, status
-    df = load_upload_csv(upload)
-    return plot_species_rpk_stacked_barplot(df, top_n_species=top_n_species)
+    df = pd.read_csv(load_upload_file(upload_id, current_app), sep=None, engine="python")
+    return plot_rpk_stacked_barplot(df, top_n_species=top_n_species, output_path=None)
 
 @visualisation_bp.route('/antigen_map/png/<int:upload_id>', methods=['GET'])
 @jwt_required
@@ -76,8 +66,24 @@ def antigen_map_png(upload_id):
         upload, err_resp, status = get_upload_or_forbidden(session, upload_id, user_id)
         if err_resp:
             return err_resp, status
-    df = load_upload_csv(upload)
-    moving_sum_df, ev_df = prepare_antigen_map_df(upload_id, df, win_size, step_size, app=current_app)
+
+    df = pd.read_csv(load_upload_file(upload_id, current_app), sep=None, engine="python")
+    diamond_db_path = os.path.join(current_app.root_path, "data", "blast_databases", "coxsackievirusB1_P08291_db.dmnd")
+
+    # ---------------- Updated: pass cache folder ----------------
+    cache_folder = current_app.config.get("CACHE_FOLDER")
+    if cache_folder:
+        os.makedirs(cache_folder, exist_ok=True)
+
+    moving_sum_df, ev_df, _ = prepare_antigen_map_df(
+        upload_id,
+        df,
+        diamond_db_path=diamond_db_path,
+        win_size=win_size,
+        step_size=step_size,
+        cache_folder=cache_folder
+    )
+
     return plot_antigen_map(moving_sum_df, ev_df=ev_df)
 
 # ---------------- JSON Routes ----------------
@@ -90,7 +96,7 @@ def species_counts_json(upload_id):
         upload, err_resp, status = get_upload_or_forbidden(session, upload_id, user_id)
         if err_resp:
             return err_resp, status
-    df = load_upload_csv(upload)
+    df = pd.read_csv(load_upload_file(upload_id, current_app), sep=None, engine="python")
     df = compute_rpk(df)
     grouped = df.groupby(['taxon_species', 'sample_id'])['rpk'].mean().reset_index()
     heatmap_data = grouped.pivot(index='taxon_species', columns='sample_id', values='rpk').fillna(0)
@@ -112,7 +118,7 @@ def species_stacked_barplot_json(upload_id):
         upload, err_resp, status = get_upload_or_forbidden(session, upload_id, user_id)
         if err_resp:
             return err_resp, status
-    df = load_upload_csv(upload)
+    df = pd.read_csv(load_upload_file(upload_id, current_app), sep=None, engine="python")
     df = compute_rpk(df)
     grouped = df.groupby(['taxon_species', 'sample_id'])['rpk'].mean().reset_index()
     pivot_df = grouped.pivot(index='sample_id', columns='taxon_species', values='rpk').fillna(0)
@@ -142,12 +148,27 @@ def antigen_map_json(upload_id):
         if err_resp:
             return jsonify({
                 "moving_sum": [], "window_start": [], "window_end": [], "ev_domains": [],
-                "error": "Upload not found" if status==404 else "Forbidden"
+                "error": "Upload not found" if status == 404 else "Forbidden"
             }), status
 
-    df = load_upload_csv(upload)
+    df = pd.read_csv(load_upload_file(upload_id, current_app), sep=None, engine="python")
     try:
-        moving_sum_df, ev_df = prepare_antigen_map_df(upload_id, df, win_size, step_size, app=current_app)
+        diamond_db_path = os.path.join(current_app.root_path, "data", "blast_databases", "coxsackievirusB1_P08291_db.dmnd")
+
+        # ---------------- Updated: pass cache folder ----------------
+        cache_folder = current_app.config.get("CACHE_FOLDER")
+        if cache_folder:
+            os.makedirs(cache_folder, exist_ok=True)
+
+        moving_sum_df, ev_df, _ = prepare_antigen_map_df(
+            upload_id,
+            df,
+            diamond_db_path=diamond_db_path,
+            win_size=win_size,
+            step_size=step_size,
+            cache_folder=cache_folder
+        )
+
         json_data = {
             "moving_sum": moving_sum_df['moving_sum'].tolist() if not moving_sum_df.empty else [],
             "window_start": moving_sum_df['window_start'].tolist() if not moving_sum_df.empty else [],
@@ -198,7 +219,6 @@ def generate_pdf_route(upload_id):
     payload = request.json
     if not payload:
         return {"error": "No payload provided"}, 400
-
     with Session() as session:
         upload = session.get(Upload, upload_id)
         if not upload:
@@ -206,23 +226,8 @@ def generate_pdf_route(upload_id):
         if upload.user_id != user_id:
             return {"error": "Forbidden"}, 403
 
-    # Ensure CSV exists locally in cache
-    cache_path = os.path.join(current_app.config['CACHE_FOLDER'], upload.name)
-    if not os.path.exists(cache_path):
-        try:
-            file_bytes = fetch_upload_from_r2(upload.name)
-            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-            with open(cache_path, 'wb') as f:
-                f.write(file_bytes)
-        except FileNotFoundError:
-            return {"error": f"Upload file {upload.name} not found in R2"}, 404
-        except Exception as e:
-            return {"error": f"Failed to fetch upload from R2: {str(e)}"}, 500
-
     try:
-        # Generate PDF using the local cache CSV
         pdf_buf = generate_pdf(upload_id, payload, app=current_app, return_buffer=True)
-
         return send_file(
             pdf_buf,
             mimetype="application/pdf",

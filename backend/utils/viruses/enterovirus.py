@@ -6,14 +6,17 @@ import pandas as pd
 import numpy as np
 import io
 import tempfile
+import os
+import subprocess
 from flask import send_file, current_app
-from utils.collections import init_r2_client, download_file_from_r2
 
 # -----------------------
 # Helper: load file from R2
 # -----------------------
+from utils.collections import init_r2_client, download_file_from_r2
+
 def load_file_from_r2(bucket_name, object_name, sep="\t"):
-    r2_client = init_r2_client(current_app.config)
+    r2_client = init_r2_client(current_app)
     with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
         temp_path = tmp_file.name
     if not download_file_from_r2(r2_client, bucket_name, object_name, temp_path):
@@ -22,118 +25,91 @@ def load_file_from_r2(bucket_name, object_name, sep="\t"):
     return df
 
 # -----------------------
-# RPK helper for new datasets
+# Generate temporary FASTA for DIAMOND short
 # -----------------------
-def compute_rpk(df, abundance_col='abundance', sample_col='sample_id'):
-    df = df.copy()
-    if abundance_col not in df.columns:
-        # fallback: pick the first non-id numeric column as abundance
-        numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
-        abundance_col = [c for c in numeric_cols if c != sample_col][0] if numeric_cols else abundance_col
-    df['rpk'] = df.groupby(sample_col)[abundance_col].transform(lambda x: x / x.sum() * 1e5)
-    return df
-
-def normalize_coordinates(df):
-    df['start'], df['end'] = np.minimum(df['start'], df['end']), np.maximum(df['start'], df['end'])
-    return df
+def generate_temp_fasta_from_peptides(peptide_df, pep_id_col='pep_id', pep_seq_col='pep_aa'):
+    temp_fasta = tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.fasta')
+    for _, row in peptide_df.iterrows():
+        header = str(row[pep_id_col])
+        seq = str(row[pep_seq_col])
+        temp_fasta.write(f">{header}\n{seq}\n")
+    temp_fasta.flush()
+    temp_fasta.close()
+    return temp_fasta.name
 
 # -----------------------
-# Wide-to-long helper for new dataset
+# Run DIAMOND / BLAST
 # -----------------------
-def melt_new_dataset(df):
-    required_cols = {'u_pep_id', 'pep_id', 'pos_start', 'pos_end', 'UniProt_acc', 
-                     'pep_aa', 'taxon_genus', 'taxon_species', 'gene_symbol', 'product'}
-    if required_cols.issubset(df.columns):
-        # Columns that are not metadata are sample measurements
-        sample_cols = [c for c in df.columns if c not in required_cols]
-        if sample_cols:
-            # Ensure 'abundance' column does not exist yet
-            if 'abundance' in df.columns:
-                df = df.rename(columns={'abundance': 'abundance_orig'})
-            df_long = df.melt(
-                id_vars=list(required_cols),
-                value_vars=sample_cols,
-                var_name='sample_id',
-                value_name='abundance'
-            )
-            return df_long
-    return df
-
-# -----------------------
-# RPK difference calculation
-# -----------------------
-def calculate_mean_rpk_difference(df, blast_df, sample_id_col='sample_id', condition_col='Condition', pep_id_col='pep_id', abundance_col='abundance'):
-    df = compute_rpk(df, abundance_col=abundance_col, sample_col=sample_id_col)
-    df['mean_rpk_per_peptide'] = df.groupby([condition_col, pep_id_col])['rpk'].transform('mean')
-
-    mean_rpk_cc = df.pivot_table(
-        index=pep_id_col,
-        columns=condition_col,
-        values='mean_rpk_per_peptide',
-        aggfunc='mean',
-        fill_value=0
-    ).reset_index()
-
-    mean_rpk_cc.columns.name = None
-    mean_rpk_cc = mean_rpk_cc.rename(columns={
-        'Case': 'mean_rpk_per_pepCase',
-        'Control': 'mean_rpk_per_pepControl'
-    })
-
-    mean_rpk_cc = mean_rpk_cc[
-        (mean_rpk_cc['mean_rpk_per_pepCase'] != 0) |
-        (mean_rpk_cc['mean_rpk_per_pepControl'] != 0)
+def run_diamond(query_fasta, db_path, output_path, threads=4, evalue=0.01):
+    cmd = [
+        "diamond", "blastp",
+        "--query", query_fasta,
+        "--db", db_path,
+        "--out", output_path,
+        "--outfmt", "6",
+        "--threads", str(threads),
+        "--evalue", str(evalue)
     ]
-
-    merged = blast_df.merge(mean_rpk_cc, left_on='seqid', right_on=pep_id_col, how='left')
-    merged['mean_rpk_difference'] = merged['mean_rpk_per_pepCase'] - merged['mean_rpk_per_pepControl']
-    merged = merged.dropna(subset=['mean_rpk_difference'])
-
-    return merged[['seqid', 'start', 'end', 'mean_rpk_per_pepCase', 'mean_rpk_per_pepControl', 'mean_rpk_difference', 'saccver']]
-
-# -----------------------
-# Moving sum
-# -----------------------
-def calculate_moving_sum(df, value_column='mean_rpk_difference', win_size=4, step_size=1):
-    rows = []
-    for _, row in df.iterrows():
-        start, end = row['start'], row['end']
-        if (end - start + 1) >= win_size:
-            for win_start in range(int(start), int(end - win_size + 2), step_size):
-                win_end = win_start + win_size - 1
-                overlap = df[(df['start'] <= win_start) & (df['end'] >= win_end)]
-                moving_sum = overlap[value_column].sum()
-                new_row = row.copy()
-                new_row['window_start'] = win_start
-                new_row['window_end'] = win_end
-                new_row['moving_sum'] = moving_sum
-                rows.append(new_row)
-    return pd.DataFrame(rows)
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"DIAMOND command failed: {e}") from e
+    return output_path
 
 # -----------------------
-# Helper: save plot to BytesIO or file
+# Helper: calculate mean RPK difference
 # -----------------------
-def save_plot_to_file_or_buf(plt_obj, output_path=None, download_name=None):
-    if output_path:
-        plt_obj.savefig(output_path, dpi=300, bbox_inches='tight')
-        plt_obj.close()
-        if download_name:
-            return send_file(output_path, mimetype='image/png', as_attachment=False, download_name=download_name)
-        return send_file(output_path, mimetype='image/png', as_attachment=False)
-    buf = io.BytesIO()
-    plt_obj.savefig(buf, format='png', dpi=300, bbox_inches='tight')
-    plt_obj.close()
-    buf.seek(0)
-    return send_file(buf, mimetype="image/png")
+def calculate_mean_rpk_difference(df, pep_col='pep_id', cond_col='Condition', rpk_col='rpk'):
+    mean_rpk = df.groupby([pep_col, cond_col])[rpk_col].mean().reset_index()
+    pivot_df = mean_rpk.pivot(index=pep_col, columns=cond_col, values=rpk_col).fillna(0)
+    for c in ['Case', 'Control']:
+        if c not in pivot_df.columns:
+            pivot_df[c] = 0
+    pivot_df['mean_rpk_difference'] = pivot_df['Case'] - pivot_df['Control']
+    pivot_df = pivot_df.reset_index().rename(columns={'Case': 'mean_rpk_case', 'Control': 'mean_rpk_control'})
+    return pivot_df
 
 # -----------------------
-# Antigen map plotting
+# Compute moving sum
+# -----------------------
+def calculate_moving_sum(df, value_column='mean_rpk_difference', win_size=32, step_size=4):
+    if not {'sstart', 'send', value_column}.issubset(df.columns):
+        raise ValueError(f"Missing required columns for moving sum: 'sstart', 'send', '{value_column}'")
+    min_start = int(df['sstart'].min())
+    max_end = int(df['send'].max())
+    window_starts = np.arange(min_start, max_end - win_size + 2, step_size)
+    moving_rows = []
+    for ws in window_starts:
+        we = ws + win_size - 1
+        mask = (df['sstart'] <= ws) & (df['send'] >= we)
+        if mask.any():
+            tmp = df.loc[mask].copy()
+            tmp['window_start'] = ws
+            tmp['window_end'] = we
+            tmp['moving_sum'] = tmp[value_column].sum()
+            moving_rows.append(tmp)
+    if moving_rows:
+        return pd.concat(moving_rows, ignore_index=True)
+    else:
+        return pd.DataFrame(columns=list(df.columns) + ['window_start', 'window_end', 'moving_sum'])
+
+# -----------------------
+# Plot antigen map
 # -----------------------
 def plot_antigen_map(moving_sum_df, ev_df=None, output_path=None):
-    required_columns = {'window_start', 'window_end', 'moving_sum'}
-    if not required_columns.issubset(moving_sum_df.columns):
-        raise ValueError("DataFrame missing required columns for plotting")
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
+    import pandas as pd
+    import numpy as np
+    import io
+    from flask import send_file
 
+    # Ensure required columns exist
+    required_cols = {'window_start', 'window_end', 'moving_sum'}
+    if not required_cols.issubset(moving_sum_df.columns):
+        raise ValueError(f"DataFrame missing required columns for plotting: {required_cols}")
+
+    # Prepare moving sum data
     plot_df = moving_sum_df.drop_duplicates(subset=['window_start']).copy()
     plot_df['x_mid'] = (plot_df['window_start'] + plot_df['window_end']) / 2
     plot_df['Case'] = plot_df['moving_sum'].clip(lower=0)
@@ -145,38 +121,60 @@ def plot_antigen_map(moving_sum_df, ev_df=None, output_path=None):
 
     case_series = pd.Series(0, index=x_full)
     ctrl_series = pd.Series(0, index=x_full)
-    case_series.loc[x_mid_int] = plot_df['Case'].values.astype('int64')
-    ctrl_series.loc[x_mid_int] = plot_df['Control'].values.astype('int64')
+    case_series.update(pd.Series(plot_df['Case'].values.astype('float'), index=x_mid_int))
+    ctrl_series.update(pd.Series(plot_df['Control'].values.astype('float'), index=x_mid_int))
 
+    # Create figure
     fig, (ax1, ax2) = plt.subplots(nrows=2, figsize=(16, 10), gridspec_kw={'height_ratios': [1, 4]})
 
+    # Plot EV polyprotein domains
     if ev_df is not None and not ev_df.empty:
         protein_colours = {
-            "VP4": "#428984", "VP2": "#6FC0EE", "VP3": "#26DED8E6", "VP1": "#C578E6",
-            "2A": "#F6F4D6", "2B": "#D9E8E5", "2C": "#EBF5D8", "3AB": "#EDD9BA",
-            "3C": "#EBD2D0", "3D": "#FFB19A"
+            "VP4": "#428984",
+            "VP2": "#6FC0EE",
+            "VP3": "#26DED8E6",
+            "VP1": "#C578E6",
+            "2A": "#F6F4D6",
+            "2B": "#D9E8E5",
+            "2C": "#EBF5D8",
+            "3AB": "#EDD9BA",
+            "3C": "#EBD2D0",
+            "3D": "#FFB19A"
         }
+
+        # Draw domain rectangles
         for _, row in ev_df.iterrows():
             ax1.add_patch(patches.Rectangle(
                 (row["start"], 0), row["end"] - row["start"], 0.1,
                 facecolor=protein_colours.get(row["ev_proteins"], "#CCCCCC")
             ))
-            ax1.text(
-                x=(row["start"] + row["end"]) / 2,
-                y=0.05,
-                s=row["ev_proteins"],
-                va='center',
-                ha='center',
-                fontsize=8,
-                fontweight='bold',
-                family='Verdana'
-            )
+
+        # Add domain labels only if wide enough
+        for _, row in ev_df.iterrows():
+            width = row["end"] - row["start"]
+            if width >= 20:
+                ax1.text(
+                    x=(row["start"] + row["end"]) / 2,
+                    y=0.05,
+                    s=row["ev_proteins"],
+                    va='center',
+                    ha='center',
+                    fontsize=8,
+                    fontweight='bold',
+                    family='Verdana'
+                )
+
+        # Add 5' and 3' annotations
+        ax1.annotate("5'", xy=(x_min, 0.05), xycoords='data', ha='left', fontsize=10, fontweight='bold')
+        ax1.annotate("3'", xy=(x_max, 0.05), xycoords='data', ha='right', fontsize=10, fontweight='bold')
+
         ax1.set_xlim(x_min - 5, x_max + 5)
-        ax1.set_ylim(-0.05, 0.15)
+        ax1.set_ylim(0, 0.2)
         ax1.axis("off")
     else:
         ax1.axis("off")
 
+    # Plot moving sum antigen map
     ax2.fill_between(case_series.index, case_series.values, color='#d73027', label='Case')
     ax2.fill_between(ctrl_series.index, ctrl_series.values, color='#4575b4', label='Control')
     ax2.axhline(0, color='black', linewidth=0.5)
@@ -188,76 +186,140 @@ def plot_antigen_map(moving_sum_df, ev_df=None, output_path=None):
     ax2.grid(False)
     plt.subplots_adjust(hspace=0.1)
 
-    return save_plot_to_file_or_buf(plt, output_path, download_name='antigen_map_cleaned.png')
+    # Save or return image
+    if output_path:
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        return send_file(output_path, mimetype='image/png', as_attachment=False)
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=300, bbox_inches='tight')
+    plt.close()
+    buf.seek(0)
+    return send_file(buf, mimetype="image/png")
 
 # -----------------------
-# EV Polyprotein TSV reading
+# Parse EV polyprotein domains from UniProt TSV
 # -----------------------
-def read_ev_polyprotein_uniprot_metadata(tsv_path):
+def parse_ev_domains_from_tsv(tsv_path, merge_3AB=True):
+    import pandas as pd
+    import re
+
     df = pd.read_csv(tsv_path, sep="\t")
-    overlapping_ev_proteins = [
+
+    # Split multiple chains
+    df = df.assign(Chain=df["Chain"].str.split("; CHAIN")).explode("Chain")
+
+    # Extract start, end, note, id
+    df["start"] = df["Chain"].str.extract(r"(\d+)\.\.").astype(int)
+    df["end"] = df["Chain"].str.extract(r"\.\.(\d+)").astype(int)
+    df["note"] = df["Chain"].str.extract(r'/note="([^"]+)"')
+    df["id"] = df["Chain"].str.extract(r'/id="([^"]+)"')
+
+    # Filter out overlapping proteins
+    overlapping_proteins = [
         "P1", "Genome polyprotein", "Capsid protein VP0", "P2", "P3",
         "Protein 3A", "Viral protein genome-linked", "Protein 3CD"
     ]
-    ev_proteins_list = ["VP4", "VP2", "VP3", "VP1", "2A", "2B", "2C", "3AB", "3C", "3D"]
+    df = df[~df["note"].isin(overlapping_proteins)]
 
-    df = df.drop(columns=["Entry", "Reviewed"], errors="ignore")
-    df = df.assign(Chain=df["Chain"].str.split("; CHAIN")).explode("Chain")
-    df["start"] = df["Chain"].str.extract(r'(\d+)').astype(float)
-    df["end"] = df["Chain"].str.extract(r'\.\.(\d+)').astype(float)
-    df["note"] = df["Chain"].str.extract(r'/note="([^"]+)"')
-    df["id"] = df["Chain"].str.extract(r'/id="([^"]+)"')
-    df = df[~df["note"].isin(overlapping_ev_proteins)]
+    # Map to standard EV proteins
+    ev_proteins_ref = ["VP4", "VP2", "VP3", "VP1", "2A", "2B", "2C", "3AB", "3C", "3D"]
 
-    pattern = "|".join(ev_proteins_list)
-    df["ev_proteins"] = df["note"].str.extract(f"({pattern})")
-    df["ev_proteins"] = df["ev_proteins"].fillna("3D")
-    df["start"] = df["start"].replace(2, 1)
+    def map_ev_protein(note):
+        if pd.isna(note):
+            return None
+        for p in ev_proteins_ref:
+            if p in note:
+                return p
+        if "3D" in note or "RNA-directed RNA polymerase" in note:
+            return "3D"
+        return None
 
-    df["protein_aa"] = df.apply(lambda row: row["Sequence"][int(row["start"]) - 1:int(row["end"])], axis=1)
+    df["ev_proteins"] = df["note"].apply(map_ev_protein)
+
+    # Add protein sequence column if Sequence exists
+    if "Sequence" in df.columns:
+        df["protein_aa"] = df.apply(lambda r: r["Sequence"][r["start"] - 1:r["end"]], axis=1)
+    else:
+        df["protein_aa"] = ""
+
+    # Merge 3A + 3B → 3AB without touching 3D
+    if merge_3AB:
+        df_3A = df[df["ev_proteins"] == "3A"]
+        df_3B = df[df["ev_proteins"] == "3B"]
+        if not df_3A.empty and not df_3B.empty:
+            start_3A = df_3A["start"].min()
+            end_3B = df_3B["end"].max()
+            seq_3AB = "".join(df_3A["protein_aa"].tolist() + df_3B["protein_aa"].tolist())
+            new_row = pd.DataFrame([{
+                "ev_proteins": "3AB",
+                "start": start_3A,
+                "end": end_3B,
+                "protein_aa": seq_3AB
+            }])
+            df = df[~df["ev_proteins"].isin(["3A", "3B"])]
+            # Insert 3AB in order
+            idx_3C = df[df["ev_proteins"] == "3C"].index
+            if len(idx_3C):
+                df = pd.concat([df.iloc[:idx_3C[0]], new_row, df.iloc[idx_3C[0]:]], ignore_index=True)
+            else:
+                df = pd.concat([df, new_row], ignore_index=True)
+
+    df = df[["ev_proteins", "start", "end", "protein_aa"]].sort_values("start").reset_index(drop=True)
     return df
 
 # -----------------------
-# Plot EV Polyprotein
+# Prepare antigen map DataFrame
 # -----------------------
-def plot_ev_polyprotein(ev_df, ax=None):
-    protein_colours = {
-        "VP4": "#428984", "VP2": "#6FC0EE", "VP3": "#26DED8E6", "VP1": "#C578E6",
-        "2A": "#F6F4D6", "2B": "#D9E8E5", "2C": "#EBF5D8", "3AB": "#EDD9BA",
-        "3C": "#EBD2D0", "3D": "#FFB19A"
-    }
+def prepare_antigen_map_df(upload_id, df, diamond_db_path,
+                           win_size=32, step_size=4, cache_folder=None, tsv_path=None):
+    cache_folder = cache_folder or tempfile.gettempdir()
+    os.makedirs(cache_folder, exist_ok=True)
 
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(16, 2))
+    debug_fasta_path = os.path.join(
+        current_app.root_path,
+        "uploads", "cache",
+        f"debug_upload_{upload_id}.fasta"
+    )
+    temp_fasta_path = generate_temp_fasta_from_peptides(df, pep_id_col='pep_id', pep_seq_col='pep_aa')
+    
+    # Copy temp FASTA to debug location
+    import shutil
+    os.makedirs(os.path.dirname(debug_fasta_path), exist_ok=True)
+    shutil.copy(temp_fasta_path, debug_fasta_path)
+    print(f"DEBUG: FASTA saved to {debug_fasta_path} for inspection")
 
-    for _, row in ev_df.iterrows():
-        ax.add_patch(patches.Rectangle(
-            (row["start"], 0), row["end"] - row["start"], 0.1,
-            facecolor=protein_colours.get(row["ev_proteins"], "#CCCCCC")
-        ))
-        ax.text(
-            x=(row["start"] + row["end"]) / 2,
-            y=0.05,
-            s=row["ev_proteins"],
-            va='center',
-            ha='center',
-            fontsize=8,
-            fontweight='bold',
-            family='Verdana'
+    temp_diamond_output = tempfile.NamedTemporaryFile(delete=False, suffix='.tsv')
+    temp_diamond_output.close()
+
+    try:
+        run_diamond(temp_fasta_path, diamond_db_path, temp_diamond_output.name)
+        blast_df = pd.read_csv(
+            temp_diamond_output.name,
+            sep="\t",
+            names=["qseqid", "sseqid", "pident", "length", "mismatch", "gapopen",
+                   "qstart", "qend", "sstart", "send", "evalue", "bitscore"]
         )
+    finally:
+        os.remove(temp_fasta_path)
+        os.remove(temp_diamond_output.name)
 
-    all_starts = ev_df["start"].tolist()
-    all_ends = ev_df["end"].tolist()
+    df = df.copy()
+    df['rpk'] = df.groupby('sample_id')['abundance'].transform(lambda x: x / x.sum() * 1e5)
 
-    for x in all_starts + all_ends:
-        ax.plot([x, x], [0, 0.1], color="black", linewidth=0.2)
-    ax.hlines(0, min(all_starts), max(all_ends), colors="black", linewidth=0.5)
-    ax.hlines(0.1, min(all_starts), max(all_ends), colors="black", linewidth=0.5)
+    mean_diff_df = calculate_mean_rpk_difference(df)
+    merged = blast_df.merge(mean_diff_df, left_on='qseqid', right_on='pep_id', how='left')
 
-    ax.text(min(all_starts) - 5, 0.05, "5'", ha='right', va='center', fontsize=8)
-    ax.text(max(all_ends) + 5, 0.05, "3'", ha='left', va='center', fontsize=8)
+    merged['sstart'] = merged['sstart'].astype(int)
+    merged['send'] = merged['send'].astype(int)
 
-    ax.set_xlim(min(all_starts) - 10, max(all_ends) + 10)
-    ax.set_ylim(-0.05, 0.15)
-    ax.axis("off")
-    return ax
+    moving_sum_df = calculate_moving_sum(
+        merged, value_column='mean_rpk_difference', win_size=win_size, step_size=step_size
+    )
+
+    if tsv_path is None:
+        tsv_path = os.path.join(current_app.root_path, "data", "coxsackievirusB1_P08291.tsv")
+    ev_df = parse_ev_domains_from_tsv(tsv_path)
+
+    return moving_sum_df, ev_df, debug_fasta_path

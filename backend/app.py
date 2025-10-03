@@ -11,7 +11,7 @@ from routes.visualisation import visualisation_bp
 from utils.r2 import fetch_upload_from_r2
 
 # ----------------- Load environment variables -----------------
-load_dotenv()
+load_dotenv()  # For local dev only; Render uses env vars in dashboard
 
 # ----------------- Flask App Setup -----------------
 app = Flask(__name__)
@@ -21,12 +21,17 @@ CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 app.config["SITE_PASSWORD"] = os.getenv("SITE_PASSWORD")
 app.secret_key = os.getenv("FLASK_SECRET_KEY", 'fallback_default_secret')
 
-# ----------------- Cache Configuration -----------------
-# Only cache folder is used for temporary storage; user uploads go to R2
-CACHE_FOLDER = os.path.join('uploads', 'cache')
-os.makedirs(CACHE_FOLDER, exist_ok=True)
-app.config['CACHE_FOLDER'] = CACHE_FOLDER
-app.config['UPLOAD_FOLDER'] = CACHE_FOLDER
+# ----------------- Temporary Upload Folder -----------------
+# Use /tmp/uploads for Render; safe and writable
+TMP_UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', '/tmp/uploads')
+os.makedirs(TMP_UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = TMP_UPLOAD_FOLDER
+
+# ----------------- R2 Configuration -----------------
+app.config['R2_BUCKET_NAME'] = os.getenv("R2_BUCKET_NAME")
+app.config['R2_ACCESS_KEY_ID'] = os.getenv("R2_ACCESS_KEY_ID")
+app.config['R2_SECRET_ACCESS_KEY'] = os.getenv("R2_SECRET_ACCESS_KEY")
+app.config['R2_ENDPOINT'] = os.getenv("R2_ENDPOINT")
 
 # ----------------- Database Initialization -----------------
 with engine.begin() as connection:
@@ -44,18 +49,18 @@ def health():
 # ----------------- Helper to read CSV from R2 -----------------
 def read_csv_from_r2(filename):
     """
-    Fetch CSV from R2 and return a Pandas DataFrame.
+    Fetch CSV from R2 and return a BytesIO object for pandas.
     """
     file_bytes = fetch_upload_from_r2(filename)
     return io.BytesIO(file_bytes)
 
 # ----------------- Register Blueprints -----------------
-# Make sure any route that reads uploads uses read_csv_from_r2
+# Any route that reads uploads should use fetch_upload_from_r2 or load_upload_file
 app.register_blueprint(auth_bp)
 app.register_blueprint(collection_bp)
 app.register_blueprint(visualisation_bp)
 
 # ----------------- Entry Point -----------------
 if __name__ == "__main__":
-    # For local testing only; production will use gunicorn on Render
+    # Local dev only; Render uses gunicorn
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
