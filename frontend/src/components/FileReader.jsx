@@ -5,7 +5,7 @@ import Box from '@mui/material/Box';
 
 const MAX_ROWS = 50; // max rows to parse and display
 
-function FileReader({ uploadId }) {
+function FileReader({ uploadId, onLoadEnd }) {
   const [csvData, setCsvData] = useState([]);
   const [headers, setHeaders] = useState([]);
   const [error, setError] = useState(null);
@@ -18,6 +18,7 @@ function FileReader({ uploadId }) {
       setError('No upload ID provided');
       setCsvData([]);
       setLoading(false);
+      if (onLoadEnd) onLoadEnd(); // <--- ADD THIS
       return;
     }
 
@@ -55,6 +56,7 @@ function FileReader({ uploadId }) {
               setError('CSV parsing error: ' + results.errors.map(e => e.message).join(', '));
               parser.abort();
               setLoading(false);
+              if (onLoadEnd) onLoadEnd(); // <--- ADD THIS
               return;
             }
             if (tempHeaders.length === 0) {
@@ -67,23 +69,27 @@ function FileReader({ uploadId }) {
               parser.abort();
               setCsvData(tempData);
               setLoading(false);
+              if (onLoadEnd) onLoadEnd(); // <--- ADD THIS
             }
           },
           complete: () => {
             if (tempData.length < MAX_ROWS) {
               setCsvData(tempData);
               setLoading(false);
+              if (onLoadEnd) onLoadEnd(); // <--- ADD THIS
             }
           },
           error: (err) => {
             setError('PapaParse error: ' + err.message);
             setLoading(false);
+            if (onLoadEnd) onLoadEnd(); // <--- ADD THIS
           },
         });
       })
       .catch((err) => {
         setError('Fetch error: ' + err.message);
         setLoading(false);
+        if (onLoadEnd) onLoadEnd(); // <--- ADD THIS
       });
   }, [uploadId, backendURL]);
 

@@ -133,6 +133,7 @@ Then to launch your virtual environment, do the following command each time:
 ```
 # On Windows:
 venv\Scripts\activate
+.\venv\Scripts\Activate.ps1
 
 # On Linux/Mac:
 source venv/bin/activate

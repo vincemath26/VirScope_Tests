@@ -6,6 +6,7 @@ import DeleteWarning from '../components/DeleteWarning';
 import { toast } from 'react-toastify';
 import Form from '../components/Form';
 import GraphSection from '../components/GraphSection';
+import CircularProgress from '@mui/material/CircularProgress'; // <--- NEW
 
 function Visualisation() {
   const { uploadId } = useParams();
@@ -16,8 +17,10 @@ function Visualisation() {
   const [pdfStatus, setPdfStatus] = useState('');
   const [pdfUrl, setPdfUrl] = useState('');
   const [activeTab, setActiveTab] = useState('csv');
+  const [loadCsv, setLoadCsv] = useState(false);
+  const [csvKey, setCsvKey] = useState(0);
+  const [csvLoading, setCsvLoading] = useState(false); // <--- NEW
 
-  // Updated backend base URL
   const backendBaseURL = process.env.REACT_APP_BACKEND_URL;
 
   const token = localStorage.getItem('token');
@@ -91,6 +94,16 @@ function Visualisation() {
         toast.error('Error deleting upload: ' + (err.response?.data?.error || err.message));
       }
     }
+  };
+
+  const handleLoadCsv = () => {
+    setLoadCsv(true);
+    setCsvKey(prev => prev + 1);
+    setCsvLoading(true); // start spinner
+  };
+
+  const handleCsvLoaded = () => {
+    setCsvLoading(false); // stop spinner
   };
 
   return (
@@ -188,9 +201,33 @@ function Visualisation() {
         {activeTab === 'csv' && (
           <>
             <h2>CSV Preview of {fileName || 'Upload'}</h2>
-            <FileReader uploadId={uploadId} />
+
+            {/* Always visible Load button with spinner */}
+            <button
+              onClick={handleLoadCsv}
+              disabled={csvLoading}
+              style={{
+                backgroundColor: csvLoading ? '#a5d6a7' : '#4caf50',
+                color: 'white',
+                padding: '8px 16px',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: csvLoading ? 'not-allowed' : 'pointer',
+                marginBottom: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              {csvLoading && <CircularProgress size={18} color="inherit" />}
+              {csvLoading ? 'Loading CSV...' : loadCsv ? 'Reload CSV Preview' : 'Load CSV Preview'}
+            </button>
+
+            {/* Render CSV only after button clicked */}
+            {loadCsv && <FileReader key={csvKey} uploadId={uploadId} onLoadEnd={handleCsvLoaded} />}
           </>
         )}
+
         {activeTab === 'graph' && <GraphSection uploadId={uploadId} />}
 
         {/* Delete Warning */}
