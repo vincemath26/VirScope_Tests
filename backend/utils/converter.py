@@ -28,7 +28,7 @@ def convert_user_upload_to_long(r2_filename: str, overwrite: bool = True) -> str
     # 5. Rename start/end columns
     df.rename(columns={"pos_start": "sstart", "pos_end": "send"}, inplace=True)
 
-    # 6. Define metadata columns after renaming
+    # 6. Define columns after renaming
     meta_cols = ["pep_id", "pep_aa", "sstart", "send", "taxon_species"]
 
     # 7. Identify sample columns
@@ -41,7 +41,7 @@ def convert_user_upload_to_long(r2_filename: str, overwrite: bool = True) -> str
     # 8. Filter out peptides that are zero in all samples
     df = df[df[sample_cols].sum(axis=1) > 0]
 
-    # (Optional) Remove specific positive controls, e.g., "POS_CTRL"
+    # Remove specific positive controls, e.g., "POS_CTRL"
     if "POS_CTRL" in sample_cols:
         df.drop(columns=["POS_CTRL"], inplace=True)
         sample_cols.remove("POS_CTRL")

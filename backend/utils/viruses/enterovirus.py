@@ -323,3 +323,4 @@ def prepare_antigen_map_df(upload_id, df, diamond_db_path,
     ev_df = parse_ev_domains_from_tsv(tsv_path)
 
     return moving_sum_df, ev_df, debug_fasta_path
+    
