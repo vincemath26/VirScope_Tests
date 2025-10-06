@@ -49,4 +49,8 @@ COPY . /app/
 # 8. Expose port and default command
 # -----------------------------
 EXPOSE 5000
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+
+# -----------------------------
+# 8. Run gunicorn and increase  timeout to 10 minutes
+# -----------------------------
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--timeout", "600", "app:app"]
