@@ -178,8 +178,8 @@ function GraphSection({ uploadId }) {
       if (!interactiveData.values?.length) return <span>No barplot data available</span>;
       return <Plot
         id="barplot-plot"
-        data={interactiveData.species.map((species, i) => ({ x: interactiveData.samples, y: interactiveData.values.map(row => row[i]), type: 'bar', name: species }))}
-        layout={{ ...layoutProps, barmode: 'stack', title: { text: customTitle || undefined, font: { size: 18 } }, xaxis: { title: { text: xAxisTitle || '', font: { size: 16 } }, automargin: true }, yaxis: { title: { text: yAxisTitle || '', font: { size: 16 } }, automargin: true }, height: 500 }}
+        data={interactiveData.species.map((species, i) => ({ x: interactiveData.samples, y: interactiveData.values.map(row => row[i]), type: 'bar', name: species, showlegend: true }))}
+        layout={{ ...layoutProps, barmode: 'stack', showlegend: true, title: { text: customTitle || undefined, font: { size: 18 } }, xaxis: { title: { text: xAxisTitle || '', font: { size: 16 } }, automargin: true }, yaxis: { title: { text: yAxisTitle || '', font: { size: 16 } }, automargin: true }, height: 500 }}
         config={{ responsive: true }}
       />;
     }

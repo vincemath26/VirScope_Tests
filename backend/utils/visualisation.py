@@ -8,7 +8,7 @@ import tempfile
 import os
 from flask import send_file, current_app
 from utils.collections import init_r2_client, download_file_from_r2
-from utils.viruses.enterovirus import prepare_antigen_map_df
+from utils.viruses.enterovirus import prepare_antigen_map_df, plot_antigen_map
 from utils.db import Session
 from utils.r2 import R2_ACCESS_KEY, R2_SECRET_KEY, R2_ENDPOINT_URL, fetch_upload_from_r2
 import boto3
@@ -44,10 +44,15 @@ def save_plot_to_file_or_buf(plt_obj, output_path=None):
 # Plot RPK stacked bar
 # -----------------------
 def plot_rpk_stacked_barplot(df, top_n_species=10, output_path=None):
-    top_species = df.groupby('taxon_species')['rpk'].sum().nlargest(top_n_species).index
-    plot_df = df[df['taxon_species'].isin(top_species)].copy()
+    # Aggregate duplicates by sample_id + taxon_species
+    df_agg = df.groupby(['sample_id', 'taxon_species'], as_index=False)['rpk'].sum()
+
+    # Select top N species by total RPK
+    top_species = df_agg.groupby('taxon_species')['rpk'].sum().nlargest(top_n_species).index
+    plot_df = df_agg[df_agg['taxon_species'].isin(top_species)]
+
     pivot_df = plot_df.pivot(index='sample_id', columns='taxon_species', values='rpk').fillna(0)
-    pivot_df = pivot_df[top_species]
+    pivot_df = pivot_df[top_species]  # Ensure consistent species order
 
     fig, ax = plt.subplots(figsize=(10, 6))
     pivot_df.plot(kind='bar', stacked=True, ax=ax)
@@ -61,8 +66,22 @@ def plot_rpk_stacked_barplot(df, top_n_species=10, output_path=None):
 # -----------------------
 # Plot RPK heatmap
 # -----------------------
-def plot_rpk_heatmap(df, output_path=None):
-    pivot_df = df.pivot(index='taxon_species', columns='sample_id', values='rpk').fillna(0)
+def plot_rpk_heatmap(df, top_n_species=20, output_path=None):
+    # Compute RPK if not already done
+    if 'rpk' not in df.columns:
+        df = compute_rpk(df)
+
+    # Aggregate duplicates
+    df_agg = df.groupby(['sample_id', 'taxon_species'], as_index=False)['rpk'].sum()
+
+    # Select top N species by total RPK
+    top_species = df_agg.groupby('taxon_species')['rpk'].sum().nlargest(top_n_species).index
+    df_agg = df_agg[df_agg['taxon_species'].isin(top_species)]
+
+    # Pivot for heatmap
+    pivot_df = df_agg.pivot(index='taxon_species', columns='sample_id', values='rpk').fillna(0)
+    
+    # Plot
     fig, ax = plt.subplots(figsize=(12, 8))
     cax = ax.imshow(pivot_df, aspect='auto', cmap='viridis')
     ax.set_xticks(np.arange(len(pivot_df.columns)))
@@ -71,6 +90,7 @@ def plot_rpk_heatmap(df, output_path=None):
     ax.set_yticklabels(pivot_df.index)
     fig.colorbar(cax, ax=ax, label='RPK')
     plt.tight_layout()
+
     return save_plot_to_file_or_buf(plt, output_path)
 
 # -----------------------
@@ -208,7 +228,7 @@ def generate_pdf(upload_id, payload, app=None, return_buffer=False):
         if gtype == "heatmap":
             top_n = int(g.get("topN", 20))
             df = compute_rpk(df)
-            resp = plot_rpk_heatmap(df, output_path=None)
+            resp = plot_rpk_heatmap(df, top_n_species=top_n, output_path=None)
             img_bytes = get_bytes_from_response(resp)
 
         elif gtype == "barplot":

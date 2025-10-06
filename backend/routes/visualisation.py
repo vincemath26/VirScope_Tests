@@ -42,7 +42,8 @@ def species_counts_heatmap(upload_id):
         if err_resp:
             return err_resp, status
     df = pd.read_csv(load_upload_file(upload_id, current_app), sep=None, engine="python")
-    return plot_rpk_heatmap(df, output_path=None)
+    df = compute_rpk(df)
+    return plot_rpk_heatmap(df, top_n_species=top_n_species, output_path=None)
 
 @visualisation_bp.route('/species_reactivity_stacked_barplot/png/<int:upload_id>', methods=['GET'])
 @jwt_required
@@ -54,6 +55,7 @@ def species_stacked_barplot(upload_id):
         if err_resp:
             return err_resp, status
     df = pd.read_csv(load_upload_file(upload_id, current_app), sep=None, engine="python")
+    df = compute_rpk(df)
     return plot_rpk_stacked_barplot(df, top_n_species=top_n_species, output_path=None)
 
 @visualisation_bp.route('/antigen_map/png/<int:upload_id>', methods=['GET'])
