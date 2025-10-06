@@ -19,7 +19,8 @@ function Visualisation() {
   const [activeTab, setActiveTab] = useState('csv');
   const [loadCsv, setLoadCsv] = useState(false);
   const [csvKey, setCsvKey] = useState(0);
-  const [csvLoading, setCsvLoading] = useState(false); // <--- NEW
+  const [csvLoading, setCsvLoading] = useState(false);
+  const [convertLoading, setConvertLoading] = useState(false);
 
   const backendBaseURL = process.env.REACT_APP_BACKEND_URL;
 
@@ -99,11 +100,28 @@ function Visualisation() {
   const handleLoadCsv = () => {
     setLoadCsv(true);
     setCsvKey(prev => prev + 1);
-    setCsvLoading(true); // start spinner
+    setCsvLoading(true);
   };
 
   const handleCsvLoaded = () => {
-    setCsvLoading(false); // stop spinner
+    setCsvLoading(false);
+  };
+
+  const handleConvertToLong = async () => {
+    setConvertLoading(true);
+    try {
+      const response = await axios.post(
+        `${backendBaseURL}/convert_long/${uploadId}`,
+        {}, // POST body empty
+        axiosConfig
+      );
+      toast.success(response.data.message || 'Upload converted successfully.');
+    } catch (err) {
+      console.error(err);
+      toast.error(err.response?.data?.error || 'Conversion failed.');
+    } finally {
+      setConvertLoading(false);
+    }
   };
 
   return (
@@ -202,26 +220,46 @@ function Visualisation() {
           <>
             <h2>CSV Preview of {fileName || 'Upload'}</h2>
 
-            {/* Always visible Load button with spinner */}
-            <button
-              onClick={handleLoadCsv}
-              disabled={csvLoading}
-              style={{
-                backgroundColor: csvLoading ? '#a5d6a7' : '#4caf50',
-                color: 'white',
-                padding: '8px 16px',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: csvLoading ? 'not-allowed' : 'pointer',
-                marginBottom: '10px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              {csvLoading && <CircularProgress size={18} color="inherit" />}
-              {csvLoading ? 'Loading CSV...' : loadCsv ? 'Reload CSV Preview' : 'Load CSV Preview'}
-            </button>
+            {/* Always visible buttons with spinner, side by side */}
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+              <button
+                onClick={handleLoadCsv}
+                disabled={csvLoading}
+                style={{
+                  backgroundColor: csvLoading ? '#a5d6a7' : '#4caf50',
+                  color: 'white',
+                  padding: '8px 16px',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: csvLoading ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                {csvLoading && <CircularProgress size={18} color="inherit" />}
+                {csvLoading ? 'Loading CSV...' : loadCsv ? 'Reload CSV Preview' : 'Load CSV Preview'}
+              </button>
+
+              <button
+                onClick={handleConvertToLong}
+                disabled={convertLoading}
+                style={{
+                  backgroundColor: convertLoading ? '#a5d6a7' : '#4caf50', // same green
+                  color: 'white',
+                  padding: '8px 16px',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: convertLoading ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                {convertLoading && <CircularProgress size={18} color="inherit" />}
+                {convertLoading ? 'Converting...' : 'Convert Wide to Long'}
+              </button>
+            </div>
 
             {/* Render CSV only after button clicked */}
             {loadCsv && <FileReader key={csvKey} uploadId={uploadId} onLoadEnd={handleCsvLoaded} />}

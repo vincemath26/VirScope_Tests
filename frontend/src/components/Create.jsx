@@ -10,61 +10,45 @@ function Create({ onClose, onCreate }) {
   const [progress, setProgress] = useState(0);
 
   const backendURL = process.env.REACT_APP_BACKEND_URL;
-  const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
 
   const handleFileChange = (e) => setFile(e.target.files[0]);
   const handleCustomNameChange = (e) => setCustomName(e.target.value);
 
-  const handleChunkedUpload = async () => {
+  const handleUpload = async () => {
     if (!file) {
       toast.warning('Please select a file to upload.');
       return;
     }
 
     const token = localStorage.getItem('token');
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-
-    setUploading(true);
-    setProgress(0);
-
-    let uploadId = null;
+    const formData = new FormData();
+    formData.append('file', file);
+    if (customName) formData.append('custom_name', customName);
 
     try {
-      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-        const start = chunkIndex * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, file.size);
-        const blob = file.slice(start, end);
+      setUploading(true);
+      setProgress(0);
 
-        const formData = new FormData();
-        formData.append('file', blob);
-        formData.append('chunkIndex', chunkIndex);
-        formData.append('totalChunks', totalChunks);
-        if (chunkIndex === 0) {
-          formData.append('custom_name', customName || file.name);
-        }
-        if (uploadId) {
-          formData.append('upload_id', uploadId);
-        }
+      const response = await axios.post(`${backendURL}/upload`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          Authorization: `Bearer ${token}`,
+        },
+        onUploadProgress: (progressEvent) => {
+          const percent = Math.round(
+            (progressEvent.loaded * 100) / progressEvent.total
+          );
+          setProgress(percent);
+        },
+      });
 
-        const response = await axios.post(`${backendURL}/upload-chunk`, formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-            Authorization: `Bearer ${token}`
-          }
-        });
-
-        if (!uploadId && response.data.upload_id) {
-          uploadId = response.data.upload_id; // get upload ID from first chunk
-        }
-
-        setProgress(Math.round(((chunkIndex + 1) / totalChunks) * 100));
-      }
+      const uploadId = response.data.upload_id;
 
       onCreate({
         upload_id: uploadId,
         name: customName || file.name,
         date_created: new Date().toISOString(),
-        date_modified: new Date().toISOString()
+        date_modified: new Date().toISOString(),
       });
 
       toast.success('File uploaded successfully!');
@@ -73,7 +57,9 @@ function Create({ onClose, onCreate }) {
       onClose();
     } catch (err) {
       console.error(err);
-      toast.error('Upload failed: ' + (err.response?.data?.error || err.message));
+      toast.error(
+        'Upload failed: ' + (err.response?.data?.error || err.message)
+      );
     } finally {
       setUploading(false);
       setProgress(0);
@@ -92,7 +78,7 @@ function Create({ onClose, onCreate }) {
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        zIndex: 9999
+        zIndex: 9999,
       }}
     >
       <div
@@ -102,7 +88,7 @@ function Create({ onClose, onCreate }) {
           borderRadius: '16px',
           width: '600px',
           maxWidth: '90%',
-          boxShadow: '0 8px 20px rgba(0,0,0,0.3)'
+          boxShadow: '0 8px 20px rgba(0,0,0,0.3)',
         }}
       >
         <h2 style={{ marginTop: 0 }}>New Upload</h2>
@@ -116,11 +102,15 @@ function Create({ onClose, onCreate }) {
             color: 'white',
             borderRadius: '12px',
             cursor: 'pointer',
-            fontWeight: 'bold'
+            fontWeight: 'bold',
           }}
         >
           {file ? file.name : 'Choose File'}
-          <input type="file" onChange={handleFileChange} style={{ display: 'none' }} />
+          <input
+            type="file"
+            onChange={handleFileChange}
+            style={{ display: 'none' }}
+          />
         </label>
 
         <input
@@ -134,7 +124,7 @@ function Create({ onClose, onCreate }) {
             padding: '10px',
             borderRadius: '10px',
             border: '1px solid #ccc',
-            fontSize: '0.95rem'
+            fontSize: '0.95rem',
           }}
         />
 
@@ -145,7 +135,7 @@ function Create({ onClose, onCreate }) {
               width: '100%',
               backgroundColor: '#eee',
               borderRadius: '5px',
-              height: '10px'
+              height: '10px',
             }}
           >
             <div
@@ -154,13 +144,20 @@ function Create({ onClose, onCreate }) {
                 height: '100%',
                 backgroundColor: '#4caf50',
                 borderRadius: '5px',
-                transition: 'width 0.2s'
+                transition: 'width 0.2s',
               }}
             />
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px', gap: '10px' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            marginTop: '20px',
+            gap: '10px',
+          }}
+        >
           <button
             onClick={onClose}
             style={{
@@ -168,14 +165,14 @@ function Create({ onClose, onCreate }) {
               borderRadius: '12px',
               border: '1px solid #ccc',
               backgroundColor: '#f0f0f0',
-              cursor: 'pointer'
+              cursor: 'pointer',
             }}
             disabled={uploading}
           >
             Cancel
           </button>
           <button
-            onClick={handleChunkedUpload}
+            onClick={handleUpload}
             style={{
               padding: '10px 20px',
               borderRadius: '12px',
@@ -183,7 +180,7 @@ function Create({ onClose, onCreate }) {
               backgroundColor: '#4caf50',
               color: 'white',
               cursor: 'pointer',
-              fontWeight: 'bold'
+              fontWeight: 'bold',
             }}
             disabled={uploading}
           >

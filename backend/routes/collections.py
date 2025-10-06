@@ -6,7 +6,7 @@ from utils.db import Session
 from models.models import Upload
 from routes.auth import jwt_required
 from utils.collections import allowed_file, get_user_upload
-from utils.r2 import r2_client, stream_upload_file_to_r2, download_file_from_r2, delete_file_from_r2
+from utils.r2 import r2_client, upload_file_to_r2, download_file_from_r2, delete_file_from_r2
 
 collection_bp = Blueprint('collection', __name__)
 ALLOWED_EXTENSIONS = {'csv'}
@@ -35,7 +35,7 @@ def upload_file():
         try:
             bucket = os.environ.get('R2_BUCKET_NAME')
             file.seek(0)
-            stream_upload_file_to_r2(r2_client, bucket, file, name_with_ext)
+            upload_file_to_r2(r2_client, bucket, file, name_with_ext)
         except Exception as e:
             return jsonify({"error": f"Failed to upload file to R2: {e}"}), 500
 
@@ -48,71 +48,6 @@ def upload_file():
         return jsonify({"message": "File uploaded successfully", "upload_id": upload_id}), 201
 
     return jsonify({"error": "File type not allowed"}), 400
-
-# -----------------------
-# Chunked Upload Endpoint
-# -----------------------
-@collection_bp.route('/upload-chunk', methods=['POST'])
-@jwt_required
-def upload_chunk():
-    user_id = g.current_user_id
-    file = request.files.get('file')
-    if not file:
-        return jsonify({"error": "No file part in the request"}), 400
-
-    chunk_index = int(request.form.get('chunkIndex', 0))
-    total_chunks = int(request.form.get('totalChunks', 1))
-    upload_id = request.form.get('upload_id')
-
-    # Fix: get the original name from the first chunk's custom_name, fallback to original filename
-    if chunk_index == 0:
-        custom_name = request.form.get('custom_name') or file.filename
-        name_with_ext = secure_filename(custom_name)
-        if not name_with_ext.lower().endswith('.csv'):
-            name_with_ext += '.csv'
-    else:
-        # For subsequent chunks, we must know the final file name from first chunk
-        if not upload_id:
-            return jsonify({"error": "Missing upload_id for subsequent chunk"}), 400
-        # Fetch upload name from DB
-        with Session() as session:
-            upload = session.get(Upload, int(upload_id))
-            if not upload or upload.user_id != user_id:
-                return jsonify({"error": "Upload not found or forbidden"}), 403
-            name_with_ext = upload.name
-
-    temp_dir = tempfile.gettempdir()
-    temp_file_path = os.path.join(temp_dir, f"{name_with_ext}.upload")
-
-    try:
-        # Append current chunk to temp file
-        with open(temp_file_path, 'ab') as f:
-            f.write(file.read())
-
-        # Create DB entry on first chunk
-        if chunk_index == 0 and not upload_id:
-            with Session() as session:
-                upload = Upload(name=name_with_ext, user_id=user_id)
-                session.add(upload)
-                session.commit()
-                upload_id = upload.upload_id
-
-        # Upload to R2 on last chunk
-        is_last_chunk = chunk_index + 1 == total_chunks
-        if is_last_chunk:
-            bucket = os.environ.get('R2_BUCKET_NAME')
-            with open(temp_file_path, 'rb') as f:
-                stream_upload_file_to_r2(r2_client, bucket, f, name_with_ext)
-            os.remove(temp_file_path)
-
-    except Exception as e:
-        return jsonify({"error": f"Chunk upload failed: {e}"}), 500
-
-    return jsonify({
-        "message": f"Chunk {chunk_index + 1}/{total_chunks} uploaded successfully",
-        "upload_id": upload_id,
-        "completed": is_last_chunk
-    })
 
 # -----------------------
 # List all uploads for user
@@ -161,7 +96,7 @@ def rename_upload(upload_id):
                 return jsonify({"error": "Failed to download original file from R2"}), 500
 
             with open(temp_path, 'rb') as f:
-                stream_upload_file_to_r2(r2_client, bucket, f, safe_name)
+                upload_file_to_r2(r2_client, bucket, f, safe_name)
 
             delete_file_from_r2(r2_client, bucket, upload.name)
             os.remove(temp_path)

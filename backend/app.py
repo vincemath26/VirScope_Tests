@@ -8,6 +8,7 @@ from utils.db import engine
 from routes.auth import auth_bp
 from routes.collections import collection_bp
 from routes.visualisation import visualisation_bp
+from routes.converter import converter_bp
 from utils.r2 import fetch_upload_from_r2
 
 # ----------------- Load environment variables -----------------
@@ -59,6 +60,7 @@ def read_csv_from_r2(filename):
 app.register_blueprint(auth_bp)
 app.register_blueprint(collection_bp)
 app.register_blueprint(visualisation_bp)
+app.register_blueprint(converter_bp)
 
 # ----------------- Entry Point -----------------
 if __name__ == "__main__":
