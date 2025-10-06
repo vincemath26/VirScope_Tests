@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { jwtDecode } from 'jwt-decode';
+import Visibility from '@mui/icons-material/Visibility';
+import VisibilityOff from '@mui/icons-material/VisibilityOff';
 
 function Security({ setSiteAuth }) {
   const backendBaseURL = process.env.REACT_APP_BACKEND_URL;
@@ -9,9 +11,10 @@ function Security({ setSiteAuth }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false); // 👈 new state
+  const [showPassword, setShowPassword] = useState(false);
+  const [hover, setHover] = useState(false);
 
-  // Inline style
+  // Inline styles
   const fullScreen = {
     display: 'flex',
     height: '100vh',
@@ -35,33 +38,31 @@ function Security({ setSiteAuth }) {
     fontFamily: 'Poppins, sans-serif',
   };
 
-  const inputWrapper = {
-    position: 'relative',
-    display: 'inline-block',
+  const inputContainer = {
+    display: 'flex',
+    alignItems: 'center',
+    marginBottom: '1rem',
   };
 
   const input = {
     fontSize: '1.5rem',
-    padding: '0.5rem',
+    padding: '0.5rem 10px',
     borderRadius: '10px',
     border: '2px solid #ffffff',
     outline: 'none',
     width: '300px',
-    marginBottom: '1rem',
-    textAlign: 'center',
   };
 
   const toggleButton = {
-    position: 'absolute',
-    right: '10px',
-    top: '50%',
-    transform: 'translateY(-50%)',
     background: 'none',
     border: 'none',
-    color: '#333',
     cursor: 'pointer',
-    fontSize: '0.9rem',
-    fontWeight: 'bold',
+    marginLeft: '10px',
+    color: '#ffffff',
+    fontSize: '1.5rem',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   };
 
   const button = {
@@ -80,8 +81,6 @@ function Security({ setSiteAuth }) {
     backgroundColor: '#73d798',
     color: '#ffffff',
   };
-
-  const [hover, setHover] = useState(false);
 
   // Check token on mount
   useEffect(() => {
@@ -131,7 +130,7 @@ function Security({ setSiteAuth }) {
       <div style={leftColumn}>
         <h1 style={title}>Enter Site Password</h1>
         <form onSubmit={handleSubmit}>
-          <div style={inputWrapper}>
+          <div style={inputContainer}>
             <input
               type={showPassword ? 'text' : 'password'}
               placeholder="Password"
@@ -144,12 +143,12 @@ function Security({ setSiteAuth }) {
               type="button"
               onClick={() => setShowPassword((prev) => !prev)}
               style={toggleButton}
-              tabIndex={-1} // so it doesn’t mess with form navigation
+              tabIndex={-1}
             >
-              {showPassword ? 'Hide' : 'Show'}
+              {showPassword ? <VisibilityOff /> : <Visibility />}
             </button>
           </div>
-          <br />
+
           <button
             type="submit"
             style={hover ? buttonHover : button}
@@ -160,6 +159,7 @@ function Security({ setSiteAuth }) {
             {loading ? 'Checking...' : 'Submit'}
           </button>
         </form>
+
         {error && <p style={{ marginTop: '1rem', color: '#ffdddd' }}>{error}</p>}
       </div>
     </div>

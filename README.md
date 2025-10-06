@@ -154,6 +154,12 @@ To quit this virtual environment, please just do the following command on your t
 deactivate
 ```
 
+### Setting up other aspects
+
+Please also ensure that you download blastp diamond in your environment! Instructions are provided within this download link:
+
+https://github.com/bbuchfink/diamond/releases
+
 ## Step 3: Setting up the Frontend
 
 Before proceeding with the steps below, please ensure that you are working with the frontend folder by doing the command `cd frontend` on your terminal (assuming that you went back to the main folder from the backend folder by using `cd ..`)

@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import LoginWarning from '../components/LoginWarning';
 import axios from 'axios';
+import Visibility from '@mui/icons-material/Visibility';
+import VisibilityOff from '@mui/icons-material/VisibilityOff';
 
-// Backend URL
 const backendBaseURL = process.env.REACT_APP_BACKEND_URL;
 
 function Login() {
@@ -12,10 +13,10 @@ function Login() {
   const [isClicked, setIsClicked] = useState(null);
   const [isHoveredRegister, setIsHoveredRegister] = useState(false);
   const [isHoveredSubmit, setIsHoveredSubmit] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const navigate = useNavigate();
 
-  // Set axios Authorization header if token exists on mount
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
@@ -23,6 +24,9 @@ function Login() {
     }
   }, []);
 
+  // =========================
+  // Styles
+  // =========================
   const pageLayout = {
     margin: 0,
     display: 'flex',
@@ -32,6 +36,7 @@ function Login() {
     flexWrap: 'wrap',
   };
 
+  // ================= LEFT COLUMN (UNCHANGED) =================
   const leftColumn = {
     backgroundColor: '#73d798',
     flex: '1 1 400px',
@@ -44,41 +49,10 @@ function Login() {
     boxSizing: 'border-box',
   };
 
-  const rightColumn = {
-    backgroundColor: '#ffffff',
-    flex: '1 1 400px',
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: '2rem',
-    boxSizing: 'border-box',
-  };
-
-  const line = {
-    width: '80%',
-    border: '0',
-    borderTop: '2px solid #ffffff',
-    margin: '1rem 0',
-  };
-
-  const text = {
-    margin: 0,
-    padding: '0.5rem',
-  };
-
-  const welcomeTitle = {
-    color: '#ffffff',
-    fontSize: 'clamp(1.5rem, 4vw, 2.5rem)',
-    padding: '1rem',
-  };
-
-  const welcomeCaption = {
-    color: '#ffffff',
-    fontSize: 'clamp(0.9rem, 2vw, 1.2rem)',
-    lineHeight: '1.5rem',
-  };
-
+  const line = { width: '80%', border: '0', borderTop: '2px solid #ffffff', margin: '1rem 0' };
+  const text = { margin: 0, padding: '0.5rem' };
+  const welcomeTitle = { color: '#ffffff', fontSize: 'clamp(1.5rem, 4vw, 2.5rem)', padding: '1rem' };
+  const welcomeCaption = { color: '#ffffff', fontSize: 'clamp(0.9rem, 2vw, 1.2rem)', lineHeight: '1.5rem' };
   const button = {
     color: '#000000',
     fontSize: '1.2rem',
@@ -93,7 +67,6 @@ function Login() {
     cursor: 'pointer',
     transition: 'all 0.3s ease',
   };
-
   const buttonHover = { ...button, backgroundColor: '#73d798', color: '#ffffff' };
   const buttonHoverWhite = { ...button, backgroundColor: '#d3d3d3', color: '#ffffff' };
   const buttonClick = { ...button, transform: 'scale(0.95)' };
@@ -105,43 +78,54 @@ function Login() {
     return button;
   };
 
-  const formContainer = {
+  // ================= RIGHT COLUMN (LOGIN STYLE) =================
+  const rightColumn = {
+    backgroundColor: '#ffffff',
+    flex: '1 1 400px',
     display: 'flex',
     flexDirection: 'column',
-    justifyContent: 'center',
-    alignItems: 'stretch',
-    width: '100%',
-    maxWidth: '400px',
-  };
-
-  const inputContainer = {
-    display: 'flex',
-    flexDirection: 'column',
-    marginBottom: '1rem',
-    width: '100%',
-  };
-
-  const textField = {
-    padding: '0.8rem',
-    fontSize: '1rem',
-    borderRadius: '5px',
-    border: '1px solid #cccccc',
-    width: '100%',
-    boxSizing: 'border-box',
-    marginTop: '0.3rem',
-  };
-
-  const formLabel = {
-    fontSize: '1rem',
-    color: '#333333',
-  };
-
-  const linkStyle = {
-    textDecoration: 'none',
-    color: 'inherit',
-    display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
+    padding: '2rem',
+    boxSizing: 'border-box',
+  };
+
+  const formContainer = { display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'stretch', width: '100%', maxWidth: '400px' };
+
+  const inputWrapper = {
+    display: 'flex',
+    alignItems: 'center',
+    marginBottom: '1rem',
+    border: '2px solid #73d798',
+    borderRadius: '10px',
+    overflow: 'hidden',
+  };
+
+  const input = { flex: 1, padding: '0.8rem', fontSize: '1rem', border: 'none', outline: 'none' };
+
+  const toggleButton = {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    padding: '0 0.8rem',
+    color: '#73d798',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '1.4rem',
+    flexShrink: 0,
+  };
+
+  const submitButton = {
+    fontSize: '1.2rem',
+    padding: '0.8rem 2rem',
+    borderRadius: '10px',
+    border: '2px solid #73d798',
+    backgroundColor: '#73d798',
+    color: '#ffffff',
+    cursor: 'pointer',
+    transition: 'all 0.3s ease',
+    marginTop: '1rem',
   };
 
   const handleInputChange = (e) => {
@@ -149,39 +133,27 @@ function Login() {
     setFormData({ ...formData, [name]: value });
   };
 
-  const handleButtonClick = (type) => {
-    setIsClicked(type);
-    setTimeout(() => setIsClicked(null), 200);
-  };
-
+  const handleButtonClick = (type) => { setIsClicked(type); setTimeout(() => setIsClicked(null), 200); };
   const handleCloseWarning = () => setShowWarning(false);
 
   const handleSubmit = (e) => {
     e.preventDefault();
     const { username, password } = formData;
-
-    // 🔹 Use centralized backend URL
     axios.post(`${backendBaseURL}/login`, { username, password })
       .then((response) => {
         if (response.data?.token && response.data?.user_id) {
           localStorage.setItem('token', response.data.token);
           localStorage.setItem('user_id', response.data.user_id);
-
-          // Set default Authorization header for all future Axios requests
           axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.token}`;
-
           navigate('/dashboard');
-        } else {
-          setShowWarning(true);
-        }
+        } else setShowWarning(true);
       })
-      .catch(() => {
-        setShowWarning(true);
-      });
+      .catch(() => setShowWarning(true));
   };
 
   return (
     <div style={pageLayout}>
+      {/* LEFT COLUMN: UNCHANGED */}
       <div style={leftColumn}>
         <h1 style={{ ...text, ...welcomeTitle }}>Time to get back into the grind!</h1>
         <hr style={line} />
@@ -198,47 +170,46 @@ function Login() {
           onMouseLeave={() => setIsHoveredRegister(false)}
           onClick={() => handleButtonClick('register')}
         >
-          <Link to='/register' style={linkStyle}>Register</Link>
+          <Link to='/register' style={{ textDecoration: 'none', color: 'inherit' }}>Register</Link>
         </button>
       </div>
 
+      {/* RIGHT COLUMN: LOGIN STYLE */}
       <div style={rightColumn}>
         <form style={formContainer} onSubmit={handleSubmit}>
-          <h1 style={{ ...text, color: '#73d798', fontSize: '2.5rem', margin: '1.5rem 0' }}>
-            Login
-          </h1>
+          <h1 style={{ color: '#73d798', fontSize: '2.5rem', marginBottom: '1.5rem' }}>Login</h1>
 
-          <div style={inputContainer}>
-            <label style={formLabel}>Username or Email:</label>
+          <div style={inputWrapper}>
             <input
-              style={textField}
-              type='text'
-              name='username'
+              type="text"
+              name="username"
+              placeholder="Username or Email"
               value={formData.username}
               onChange={handleInputChange}
+              style={input}
             />
           </div>
 
-          <div style={inputContainer}>
-            <label style={formLabel}>Password:</label>
+          <div style={inputWrapper}>
             <input
-              style={textField}
-              type='password'
-              name='password'
+              type={showPassword ? 'text' : 'password'}
+              name="password"
+              placeholder="Password"
               value={formData.password}
               onChange={handleInputChange}
+              style={input}
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword(prev => !prev)}
+              style={toggleButton}
+              tabIndex={-1}
+            >
+              {showPassword ? <VisibilityOff /> : <Visibility />}
+            </button>
           </div>
 
-          <button
-            style={buttonStyle('submit')}
-            onMouseEnter={() => setIsHoveredSubmit(true)}
-            onMouseLeave={() => setIsHoveredSubmit(false)}
-            onClick={() => handleButtonClick('submit')}
-            type='submit'
-          >
-            Submit
-          </button>
+          <button type="submit" style={submitButton}>Login</button>
         </form>
       </div>
 
