@@ -53,7 +53,7 @@ For more information on how to setup git however, please refer to these links:
 
 Before proceeding with the steps below, please ensure that you are working with the backend folder by doing the command `cd backend` on your terminal.
 
-### Setting up the Database
+### [OPTIONAL FOR LOCAL-MACHINE TESTING] Setting up the Database
 
 I am using PostgreSQL, specifically this version:
 
@@ -173,3 +173,4 @@ npm install
 
 npm start
 ```
+
