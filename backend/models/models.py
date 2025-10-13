@@ -16,12 +16,13 @@ class Upload(Base):
     __tablename__ = 'uploads'
     upload_id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False)
+    file_type = Column(String(20), nullable=False, default='base')  # 'base' or 'metadata'
     date_created = Column(DateTime, default=datetime.utcnow)
     date_modified = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     user_id = Column(Integer, ForeignKey('users.user_id'))
-    workspace_id = Column(Integer, ForeignKey('workspaces.workspace_id'), nullable=True)  # new field
+    workspace_id = Column(Integer, ForeignKey('workspaces.workspace_id'), nullable=True)
     user = relationship("User", back_populates="uploads")
-    workspace = relationship("Workspace", back_populates="uploads")  # relationship to workspace
+    workspace = relationship("Workspace", back_populates="uploads")
 
 class GraphText(Base):
     __tablename__ = 'upload_graph_texts'

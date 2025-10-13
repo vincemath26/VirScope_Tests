@@ -3,9 +3,9 @@ import axios from 'axios';
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-function CreateUpload({ onClose, onCreate }) {
+function CreateBase({ workspaceId, existingFile, onSuccess, onClose }) {
   const [file, setFile] = useState(null);
-  const [customName, setCustomName] = useState('');
+  const [customName, setCustomName] = useState(existingFile ? existingFile.name : '');
   const [uploading, setUploading] = useState(false);
 
   const backendURL = process.env.REACT_APP_BACKEND_URL;
@@ -17,38 +17,44 @@ function CreateUpload({ onClose, onCreate }) {
     }
 
     const token = localStorage.getItem('token');
+    if (!token) {
+      toast.error('No token found. Please log in again.');
+      return;
+    }
+
     const formData = new FormData();
     formData.append('file', file);
-    if (customName.trim()) formData.append('custom_name', customName.trim());
+    if (customName) formData.append('custom_name', customName);
 
     try {
       setUploading(true);
 
-      const response = await axios.post(`${backendURL}/upload`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      if (existingFile) {
+        // Replace existing base file
+        await axios.post(
+          `${backendURL}/upload/${existingFile.upload_id}/replace`,
+          formData,
+          { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } }
+        );
+        toast.success('Base file replaced successfully!');
+      } else {
+        // Upload new base file
+        formData.append('workspace_id', workspaceId);
+        formData.append('file_type', 'base');
 
-      const uploadId = response.data.upload_id;
+        await axios.post(
+          `${backendURL}/upload`,
+          formData,
+          { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } }
+        );
+        toast.success('Base file uploaded successfully!');
+      }
 
-      onCreate({
-        upload_id: uploadId,
-        name: customName || file.name,
-        date_created: new Date().toISOString(),
-        date_modified: new Date().toISOString(),
-      });
-
-      toast.success('File uploaded successfully!');
-      setFile(null);
-      setCustomName('');
+      onSuccess();
       onClose();
     } catch (err) {
-      console.error(err);
-      toast.error(
-        'Upload failed: ' + (err.response?.data?.error || err.message)
-      );
+      console.error(err.response?.data || err);
+      toast.error('Upload failed: ' + (err.response?.data?.error || err.message));
     } finally {
       setUploading(false);
     }
@@ -68,35 +74,32 @@ function CreateUpload({ onClose, onCreate }) {
         alignItems: 'center',
         zIndex: 9999,
       }}
+      onClick={onClose}
     >
       <div
         style={{
           backgroundColor: 'white',
           padding: '40px',
           borderRadius: '16px',
-          width: '600px',
+          width: '500px',
           maxWidth: '90%',
           boxShadow: '0 8px 20px rgba(0,0,0,0.3)',
         }}
+        onClick={(e) => e.stopPropagation()}
       >
-        <h2 style={{ marginTop: 0 }}>New Upload</h2>
+        <h2 style={{ marginTop: 0 }}>{existingFile ? 'Replace Base File' : 'Upload Base File'}</h2>
 
         <input
           type="file"
+          accept=".csv"
           onChange={(e) => setFile(e.target.files[0])}
-          style={{
-            marginTop: '10px',
-            width: '100%',
-            padding: '10px',
-            borderRadius: '10px',
-            border: '1px solid #ccc',
-          }}
+          style={{ marginTop: '15px', width: '100%' }}
           disabled={uploading}
         />
 
         <input
           type="text"
-          placeholder="Custom name (optional)"
+          placeholder="Custom file name"
           value={customName}
           onChange={(e) => setCustomName(e.target.value)}
           style={{
@@ -105,19 +108,12 @@ function CreateUpload({ onClose, onCreate }) {
             padding: '10px',
             borderRadius: '10px',
             border: '1px solid #ccc',
-            fontSize: '0.95rem',
+            fontSize: '1rem',
           }}
           disabled={uploading}
         />
 
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            marginTop: '20px',
-            gap: '10px',
-          }}
-        >
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '25px', gap: '10px' }}>
           <button
             onClick={onClose}
             style={{
@@ -131,6 +127,7 @@ function CreateUpload({ onClose, onCreate }) {
           >
             Cancel
           </button>
+
           <button
             onClick={handleUpload}
             style={{
@@ -142,9 +139,9 @@ function CreateUpload({ onClose, onCreate }) {
               cursor: 'pointer',
               fontWeight: 'bold',
             }}
-            disabled={uploading}
+            disabled={uploading || !file}
           >
-            {uploading ? 'Uploading...' : 'Upload'}
+            {uploading ? (existingFile ? 'Replacing...' : 'Uploading...') : existingFile ? 'Replace' : 'Upload'}
           </button>
         </div>
       </div>
@@ -152,4 +149,4 @@ function CreateUpload({ onClose, onCreate }) {
   );
 }
 
-export default CreateUpload;
+export default CreateBase;

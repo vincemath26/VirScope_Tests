@@ -172,7 +172,10 @@ function Dashboard() {
             style={{ ...card, ...(hoveredIndex === row.startIndex + index ? cardHover : {}) }}
             onMouseEnter={() => setHoveredIndex(row.startIndex + index)}
             onMouseLeave={() => setHoveredIndex(null)}
-            onClick={() => navigate(`/workspace/${ws.workspace_id}`)}
+            onClick={() => {
+              localStorage.setItem('workspace', JSON.stringify({ id: ws.workspace_id }));
+              navigate(`/workspace/${ws.workspace_id}`);
+            }}
           >
             {editingId === ws.workspace_id ? (
               <input

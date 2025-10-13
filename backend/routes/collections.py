@@ -20,7 +20,10 @@ ALLOWED_EXTENSIONS = {'csv'}
 @jwt_required
 def upload_file():
     user_id = g.current_user_id
+
     workspace_id = request.form.get('workspace_id', type=int)
+    if workspace_id is None:
+        return jsonify({"error": "workspace_id is required for uploads"}), 400
 
     if 'file' not in request.files:
         return jsonify({"error": "No file part in the request"}), 400
@@ -28,6 +31,8 @@ def upload_file():
     file = request.files['file']
     if file.filename == '':
         return jsonify({"error": "No file selected"}), 400
+
+    file_type = request.form.get('file_type', 'base')  # base or metadata
 
     if file and allowed_file(file.filename):
         custom_name = request.form.get('custom_name', file.filename)
@@ -43,7 +48,12 @@ def upload_file():
             return jsonify({"error": f"Failed to upload file to R2: {e}"}), 500
 
         with Session() as session:
-            upload = Upload(name=name_with_ext, user_id=user_id, workspace_id=workspace_id)
+            upload = Upload(
+                name=name_with_ext,
+                user_id=user_id,
+                workspace_id=workspace_id,
+                file_type=file_type
+            )
             session.add(upload)
             session.commit()
             upload_id = upload.upload_id
@@ -51,6 +61,7 @@ def upload_file():
         return jsonify({"message": "File uploaded successfully", "upload_id": upload_id}), 201
 
     return jsonify({"error": "File type not allowed"}), 400
+
 
 # -----------------------
 # Replace an upload
@@ -67,12 +78,16 @@ def replace_upload(upload_id):
     if file.filename == '':
         return jsonify({"error": "No file selected"}), 400
 
+    file_type = request.form.get('file_type')  # optional, override if provided
+    custom_name = request.form.get('custom_name')  # optional new name
+
     with Session() as session:
         upload = get_user_upload(session, Upload, upload_id, user_id)
         if not upload:
             return jsonify({"error": "Forbidden"}), 403
 
-        name_with_ext = secure_filename(file.filename)
+        # Determine the new filename
+        name_with_ext = secure_filename(custom_name) if custom_name else secure_filename(file.filename)
         if not name_with_ext.lower().endswith('.csv'):
             name_with_ext += '.csv'
 
@@ -81,12 +96,15 @@ def replace_upload(upload_id):
             # Upload new file
             file.seek(0)
             upload_file_to_r2(r2_client, bucket, file, name_with_ext)
-            # Delete old file
+            # Delete old file from R2
             delete_file_from_r2(r2_client, bucket, upload.name)
         except Exception as e:
             return jsonify({"error": f"Failed to replace file in R2: {e}"}), 500
 
+        # Update DB record
         upload.name = name_with_ext
+        if file_type:
+            upload.file_type = file_type
         upload.date_modified = datetime.utcnow()
         session.commit()
 
@@ -103,7 +121,7 @@ def get_upload(upload_id):
             Upload.upload_id == upload_id,
             Upload.user_id == g.current_user_id
         ).first()
-        
+
         if not upload:
             return jsonify({"error": "Upload not found"}), 404
 
@@ -111,9 +129,11 @@ def get_upload(upload_id):
             "upload_id": upload.upload_id,
             "name": upload.name,
             "workspace_id": upload.workspace_id,
+            "file_type": upload.file_type,
             "date_created": upload.date_created.isoformat(),
             "date_modified": upload.date_modified.isoformat()
         })
+
 
 # -----------------------
 # List all uploads for user (optional workspace filter)
@@ -133,11 +153,13 @@ def list_uploads():
                 "upload_id": upload.upload_id,
                 "name": upload.name,
                 "workspace_id": upload.workspace_id,
+                "file_type": upload.file_type,
                 "date_created": upload.date_created.isoformat(),
                 "date_modified": upload.date_modified.isoformat()
             } for upload in uploads
         ]
     return jsonify(uploads_data)
+
 
 # -----------------------
 # Rename upload
@@ -180,6 +202,7 @@ def rename_upload(upload_id):
 
     return jsonify({"message": "File renamed successfully", "new_name": safe_name})
 
+
 # -----------------------
 # Delete single upload
 # -----------------------
@@ -208,8 +231,8 @@ def delete_upload(upload_id):
 @collection_bp.route('/uploads/csv-preview/<int:upload_id>', methods=['GET'])
 @jwt_required
 def preview_csv(upload_id):
-    start = int(request.args.get('start', 0))       # default 0
-    limit = int(request.args.get('limit', 50))      # default 50 rows
+    start = int(request.args.get('start', 0))
+    limit = int(request.args.get('limit', 50))
 
     with Session() as session:
         upload = get_user_upload(session, Upload, upload_id, g.current_user_id)
@@ -221,21 +244,30 @@ def preview_csv(upload_id):
         with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
             temp_path = tmp_file.name
 
+        # Download file from R2
         if not download_file_from_r2(r2_client, bucket, upload.name, temp_path):
             os.remove(temp_path)
             return jsonify({"error": "Failed to access file"}), 500
 
-        # Read only the required slice
         rows = []
+        total_rows = 0
+        fieldnames = []
+
+        # Detect delimiter (comma or tab)
         with open(temp_path, newline='', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
+            first_line = f.readline()
+            delimiter = '\t' if '\t' in first_line else ','
+            f.seek(0)
+            reader = csv.DictReader(f, delimiter=delimiter)
+            fieldnames = reader.fieldnames
+
             for i, row in enumerate(reader):
                 if i < start:
                     continue
                 if i >= start + limit:
                     break
                 rows.append(row)
-            fieldnames = reader.fieldnames
+            total_rows = i + 1  # count total rows read
 
         os.remove(temp_path)
         return jsonify({
@@ -243,13 +275,73 @@ def preview_csv(upload_id):
             "rows": rows,
             "start": start,
             "limit": limit,
-            "row_count": i + 1  # total rows read so far
+            "row_count": total_rows
         })
 
     except Exception as e:
         if os.path.exists(temp_path):
             os.remove(temp_path)
         return jsonify({"error": f"Failed to preview CSV: {e}"}), 500
+
+# -----------------------
+# Check CSV file (optimized)
+# -----------------------
+REQUIRED_COLUMNS = {
+    "antigen_map": ["pep_id", "pep_aa", "pos_start", "pos_end", "taxon_species", "sample_id", "abundance", "Condition"],
+    "exploratory": ["taxon_species", "sample_id"]
+}
+
+@collection_bp.route('/uploads/<int:upload_id>/check-columns', methods=['GET'])
+@jwt_required
+def check_upload_columns(upload_id):
+    with Session() as session:
+        upload = get_user_upload(session, Upload, upload_id, g.current_user_id)
+        if not upload:
+            return jsonify({"error": "Forbidden"}), 403
+
+    bucket = os.environ.get('R2_BUCKET_NAME')
+    with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+        temp_path = tmp_file.name
+
+    try:
+        if not download_file_from_r2(r2_client, bucket, upload.name, temp_path):
+            os.remove(temp_path)
+            return jsonify({"error": "Failed to download file from R2"}), 500
+
+        # Detect delimiter and read only header
+        try:
+            with open(temp_path, newline='', encoding='utf-8') as f:
+                # Peek first line to detect delimiter
+                first_line = f.readline()
+                if '\t' in first_line:
+                    delimiter = '\t'
+                else:
+                    delimiter = ','
+                f.seek(0)
+                reader = csv.reader(f, delimiter=delimiter)
+                header = next(reader)
+                columns = set(header)
+        except Exception as e:
+            os.remove(temp_path)
+            return jsonify({"error": f"Failed to read CSV header: {e}"}), 500
+
+        missing_for_antigen_map = [col for col in REQUIRED_COLUMNS["antigen_map"] if col not in columns]
+        missing_for_exploratory = [col for col in REQUIRED_COLUMNS["exploratory"] if col not in columns]
+
+        result = {
+            "can_generate_antigen_map": len(missing_for_antigen_map) == 0,
+            "missing_columns_antigen_map": missing_for_antigen_map,
+            "can_generate_exploratory": len(missing_for_exploratory) == 0,
+            "missing_columns_exploratory": missing_for_exploratory
+        }
+
+        os.remove(temp_path)
+        return jsonify(result)
+
+    except Exception as e:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        return jsonify({"error": f"Failed to check CSV columns: {e}"}), 500
 
 # -----------------------
 # Workspace routes
@@ -289,6 +381,7 @@ def create_workspace():
         }
     }), 201
 
+
 @collection_bp.route('/workspace/<int:workspace_id>', methods=['GET'])
 @jwt_required
 def get_workspace(workspace_id):
@@ -308,6 +401,7 @@ def get_workspace(workspace_id):
             "date_modified": workspace.date_modified.isoformat()
         })
 
+
 @collection_bp.route('/workspaces', methods=['GET'])
 @jwt_required
 def list_workspaces():
@@ -324,6 +418,7 @@ def list_workspaces():
             } for ws in workspaces
         ]
     return jsonify(workspaces_data)
+
 
 @collection_bp.route('/workspace/<int:workspace_id>/rename', methods=['POST'])
 @jwt_required
@@ -361,22 +456,75 @@ def rename_workspace(workspace_id):
         "workspace": workspace_data
     })
 
+
 @collection_bp.route('/workspace/<int:workspace_id>', methods=['DELETE'])
 @jwt_required
 def delete_workspace(workspace_id):
+    user_id = g.current_user_id
+    bucket = os.environ.get('R2_BUCKET_NAME')
+
+    if not bucket:
+        return jsonify({"error": "R2_BUCKET_NAME not configured"}), 500
+
     with Session() as session:
-        workspace = session.query(Workspace).filter(
-            Workspace.workspace_id == workspace_id,
-            Workspace.user_id == g.current_user_id
+        workspace = session.query(Workspace).filter_by(
+            workspace_id=workspace_id,
+            user_id=user_id
         ).first()
 
         if not workspace:
             return jsonify({"error": "Workspace not found or forbidden"}), 403
 
-        session.delete(workspace)
-        session.commit()
+        uploads = session.query(Upload).filter_by(
+            workspace_id=workspace_id,
+            user_id=user_id
+        ).all()
 
-    return jsonify({"message": "Workspace deleted successfully"})
+        failed = []
+        successes = []
+
+        for upload in uploads:
+            key = upload.name
+            try:
+                result = delete_file_from_r2(r2_client, bucket, key)
+                if result is True:
+                    successes.append(upload.upload_id)
+                else:
+                    # fallback verification
+                    try:
+                        if hasattr(r2_client, "delete_object"):
+                            r2_client.delete_object(Bucket=bucket, Key=key)
+                            try:
+                                r2_client.head_object(Bucket=bucket, Key=key)
+                                failed.append({"upload_id": upload.upload_id, "name": key, "error": "Still exists"})
+                                continue
+                            except Exception:
+                                successes.append(upload.upload_id)
+                    except Exception as e:
+                        failed.append({"upload_id": upload.upload_id, "name": key, "error": str(e)})
+                        continue
+            except Exception as e:
+                failed.append({"upload_id": upload.upload_id, "name": key, "error": str(e)})
+                continue
+
+        if failed:
+            session.rollback()
+            return jsonify({
+                "error": "Some files could not be deleted from R2. Workspace deletion aborted.",
+                "failed_uploads": failed
+            }), 500
+
+        try:
+            for upload in uploads:
+                session.delete(upload)
+            session.delete(workspace)
+            session.commit()
+        except Exception as db_exc:
+            session.rollback()
+            return jsonify({"error": f"Failed to delete workspace and uploads from DB: {db_exc}"}), 500
+
+    return jsonify({"message": "Workspace and associated uploads deleted successfully."}), 200
+
 
 # -----------------------
 # Delete all uploads globally
@@ -398,6 +546,7 @@ def delete_all_uploads_global():
             return jsonify({"error": str(e)}), 500
 
     return jsonify({'message': 'All uploads and their files have been deleted globally.'}), 200
+
 
 # -----------------------
 # Delete all workspaces globally
