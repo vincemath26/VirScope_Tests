@@ -160,6 +160,37 @@ def list_uploads():
         ]
     return jsonify(uploads_data)
 
+# -----------------------
+# List all metadata uploads for a specific workspace
+# -----------------------
+@collection_bp.route('/uploads/metadata', methods=['GET'])
+@jwt_required
+def list_metadata_uploads():
+    user_id = g.current_user_id
+    workspace_id = request.args.get('workspace_id', type=int)
+
+    if not workspace_id:
+        return jsonify({"error": "workspace_id is required"}), 400
+
+    with Session() as session:
+        uploads = session.query(Upload).filter(
+            Upload.user_id == user_id,
+            Upload.workspace_id == workspace_id,
+            Upload.file_type == 'metadata'
+        ).all()
+
+        uploads_data = [
+            {
+                "upload_id": u.upload_id,
+                "name": u.name,
+                "workspace_id": u.workspace_id,
+                "file_type": u.file_type,
+                "date_created": u.date_created.isoformat(),
+                "date_modified": u.date_modified.isoformat()
+            } for u in uploads
+        ]
+
+    return jsonify(uploads_data)
 
 # -----------------------
 # Rename upload

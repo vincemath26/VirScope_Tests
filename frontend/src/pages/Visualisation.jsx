@@ -2,27 +2,25 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import DeleteWarning from '../components/DeleteWarning';
-import RenameWork from '../components/RenameWork.jsx';
+import EditWork from '../components/EditWork.jsx'; // renamed form
 import Dataset from '../components/Dataset.jsx';
 import { toast } from 'react-toastify';
 import GraphSection from '../components/GraphSection';
 import Tutorial from '../components/Tutorial';
 
 function Visualisation() {
-  const { workspaceId } = useParams(); // Only workspaceId now
+  const { workspaceId } = useParams();
   const navigate = useNavigate();
   const [workspace, setWorkspace] = useState({ title: '', description: '' });
   const [showDeleteWarning, setShowDeleteWarning] = useState(false);
-  const [showRenameForm, setShowRenameForm] = useState(false);
-  const [activeTab, setActiveTab] = useState('tutorial'); // first tab is Tutorial
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [activeTab, setActiveTab] = useState('tutorial');
 
   const backendBaseURL = process.env.REACT_APP_BACKEND_URL;
   const token = localStorage.getItem('token');
   const axiosConfig = { headers: { Authorization: `Bearer ${token}` } };
 
-  // ------------------------
   // Fetch workspace info
-  // ------------------------
   useEffect(() => {
     const fetchWorkspace = async () => {
       try {
@@ -42,9 +40,7 @@ function Visualisation() {
     fetchWorkspace();
   }, [workspaceId, navigate]);
 
-  // ------------------------
   // Delete workspace
-  // ------------------------
   const handleDelete = async () => {
     try {
       await axios.delete(`${backendBaseURL}/workspace/${workspaceId}`, axiosConfig);
@@ -60,20 +56,18 @@ function Visualisation() {
     }
   };
 
-  // ------------------------
-  // Rename workspace
-  // ------------------------
-  const handleRenameWorkspace = async (newTitle, newDescription) => {
+  // Edit workspace
+  const handleEditWorkspace = async (newTitle, newDescription) => {
     try {
       await axios.post(`${backendBaseURL}/workspace/${workspaceId}/rename`, 
         { new_title: newTitle, new_description: newDescription }, axiosConfig
       );
-      toast.success('Workspace renamed successfully');
+      toast.success('Workspace edited successfully'); // updated toast
       setWorkspace(prev => ({ ...prev, title: newTitle, description: newDescription }));
-      setShowRenameForm(false);
+      setShowEditForm(false);
     } catch (err) {
       console.error(err);
-      toast.error('Failed to rename workspace: ' + (err.response?.data?.error || err.message));
+      toast.error('Failed to edit workspace: ' + (err.response?.data?.error || err.message));
     }
   };
 
@@ -91,10 +85,10 @@ function Visualisation() {
           </button>
 
           <button
-            onClick={() => setShowRenameForm(true)}
+            onClick={() => setShowEditForm(true)}
             style={{ backgroundColor: '#73D798', color: 'white', padding: '8px 16px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
           >
-            Rename
+            Edit
           </button>
 
           <button
@@ -113,11 +107,11 @@ function Visualisation() {
           </p>
         </div>
 
-        {/* Rename Form */}
-        {showRenameForm && (
-          <RenameWork
-            onSubmit={handleRenameWorkspace}
-            onCancel={() => setShowRenameForm(false)}
+        {/* Edit Form */}
+        {showEditForm && (
+          <EditWork
+            onSubmit={handleEditWorkspace}
+            onCancel={() => setShowEditForm(false)}
             initialTitle={workspace.title}
             initialDescription={workspace.description}
           />

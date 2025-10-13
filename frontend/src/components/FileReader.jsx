@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 
-function FileReader({ uploadId }) {
+function FileReader({ uploadId, onClose }) {
   const backendURL = process.env.REACT_APP_BACKEND_URL;
 
   const [rows, setRows] = useState([]);
@@ -58,6 +58,7 @@ function FileReader({ uploadId }) {
   return (
     <div
       style={{
+        position: 'relative',
         marginTop: '1rem',
         marginBottom: '2rem',
         border: '1px solid #ddd',
@@ -68,6 +69,26 @@ function FileReader({ uploadId }) {
         backgroundColor: '#f9f9f9',
       }}
     >
+      {/* Close button */}
+      {onClose && (
+        <button
+          onClick={onClose}
+          style={{
+            position: 'absolute',
+            top: '5px',
+            right: '10px',
+            border: 'none',
+            background: 'transparent',
+            fontWeight: 'bold',
+            fontSize: '16px',
+            cursor: 'pointer',
+            color: '#888',
+          }}
+        >
+          ×
+        </button>
+      )}
+
       <h3 style={{ marginBottom: '10px' }}>CSV Preview</h3>
 
       {isLoading ? (
@@ -101,7 +122,10 @@ function FileReader({ uploadId }) {
               </thead>
               <tbody>
                 {rows.map((row, idx) => (
-                  <tr key={start + idx} style={{ backgroundColor: start + idx % 2 === 0 ? '#fff' : '#f1f1f1' }}>
+                  <tr
+                    key={start + idx}
+                    style={{ backgroundColor: start + idx % 2 === 0 ? '#fff' : '#f1f1f1' }}
+                  >
                     <td style={{ border: '1px solid #ddd', padding: '5px' }}>{start + idx + 1}</td>
                     {fieldnames.map((field) => (
                       <td key={field} style={{ border: '1px solid #ddd', padding: '5px' }}>

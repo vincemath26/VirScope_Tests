@@ -152,7 +152,7 @@ function Dashboard() {
     overflow: 'hidden'
   };
   const cardHover = { transform: 'scale(1.05)', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' };
-  const fileTitle = { fontWeight: 'bold', fontSize: '1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' };
+  const fileTitle = { fontWeight: 'bold', fontSize: '1rem', whiteSpace: 'normal', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' };
   const fileDescription = { fontSize: '0.9rem', color: '#555', marginTop: '0.3rem', width: '100%' };
   const fileDate = { fontSize: '0.8rem', color: '#666', marginTop: '0.2rem' };
   const cardRow = { display: 'flex', justifyContent: 'center', gap: '15px', flexWrap: 'wrap', marginBottom: '1rem' };
