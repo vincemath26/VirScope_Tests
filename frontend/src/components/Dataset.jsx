@@ -25,10 +25,10 @@ function Dataset() {
   // =========================
   // Button styles
   // =========================
-  const button = {
+  const buttonBase = {
     color: '#000',
+    minWidth: '90px',
     height: '40px',
-    width: '90px',
     borderStyle: 'solid',
     borderColor: '#73D798',
     borderWidth: '3px',
@@ -41,8 +41,13 @@ function Dataset() {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    boxSizing: 'border-box',
+    flexShrink: 0,
   };
-  const buttonHover = { ...button, backgroundColor: '#73D798', color: '#fff' };
+  const buttonHover = { ...buttonBase, backgroundColor: '#73D798', color: '#fff' };
 
   // =========================
   // Hover states for base buttons
@@ -51,9 +56,9 @@ function Dataset() {
   const [isHoveredCheck, setIsHoveredCheck] = useState(false);
   const [isHoveredPreview, setIsHoveredPreview] = useState(false);
 
-  const replaceButtonStyle = isHoveredReplace ? buttonHover : button;
-  const checkButtonStyle = isHoveredCheck ? buttonHover : button;
-  const previewButtonStyle = isHoveredPreview ? buttonHover : button;
+  const replaceButtonStyle = isHoveredReplace ? buttonHover : buttonBase;
+  const checkButtonStyle = isHoveredCheck ? buttonHover : buttonBase;
+  const previewButtonStyle = isHoveredPreview ? buttonHover : buttonBase;
 
   // =========================
   // Hover states for metadata buttons
@@ -67,8 +72,17 @@ function Dataset() {
     if (type === 'delete') hovered = isHoveredMetadataDelete[id];
     if (type === 'add') hovered = isHoveredMetadataAdd[id];
     if (type === 'preview') hovered = isHoveredMetadataPreview[id];
-    return hovered ? buttonHover : button;
+    return hovered ? buttonHover : buttonBase;
   };
+
+  // =========================
+  // Hover states for metadata "Upload" and "Refresh" buttons (isolated)
+  // =========================
+  const [isHoveredMetadataUpload, setIsHoveredMetadataUpload] = useState(false);
+  const [isHoveredMetadataRefresh, setIsHoveredMetadataRefresh] = useState(false);
+
+  const metadataUploadButtonStyle = isHoveredMetadataUpload ? buttonHover : buttonBase;
+  const metadataRefreshButtonStyle = isHoveredMetadataRefresh ? buttonHover : buttonBase;
 
   // =========================
   // Fetch base file for workspace
@@ -240,7 +254,7 @@ function Dataset() {
               disabled={isChecking}
             >
               {isChecking ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', width: '100%' }}>
                   <span
                     className="spinner"
                     style={{
@@ -368,10 +382,20 @@ function Dataset() {
       </h2>
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-        <button onClick={openMetadataPopup} style={button}>
+        <button
+          onClick={openMetadataPopup}
+          style={metadataUploadButtonStyle}
+          onMouseEnter={() => setIsHoveredMetadataUpload(true)}
+          onMouseLeave={() => setIsHoveredMetadataUpload(false)}
+        >
           Upload
         </button>
-        <button onClick={fetchMetadataFiles} style={button}>
+        <button
+          onClick={fetchMetadataFiles}
+          style={metadataRefreshButtonStyle}
+          onMouseEnter={() => setIsHoveredMetadataRefresh(true)}
+          onMouseLeave={() => setIsHoveredMetadataRefresh(false)}
+        >
           Refresh
         </button>
       </div>

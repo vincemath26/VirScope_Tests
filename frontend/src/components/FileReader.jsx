@@ -8,7 +8,7 @@ function FileReader({ uploadId, onClose }) {
   const [rows, setRows] = useState([]);
   const [fieldnames, setFieldnames] = useState([]);
   const [start, setStart] = useState(0);
-  const [limit] = useState(50); // fixed 50 rows per page
+  const [limit] = useState(50);
   const [rowCount, setRowCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -20,9 +20,7 @@ function FileReader({ uploadId, onClose }) {
       const token = localStorage.getItem('token');
       const res = await axios.get(
         `${backendURL}/uploads/csv-preview/${uploadId}?start=${startIndex}&limit=${limit}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
 
       setRows(res.data.rows || []);
@@ -42,15 +40,11 @@ function FileReader({ uploadId, onClose }) {
   }, [uploadId]);
 
   const handleNext = () => {
-    if (start + limit < rowCount) {
-      fetchRows(start + limit);
-    }
+    if (start + limit < rowCount) fetchRows(start + limit);
   };
 
   const handlePrevious = () => {
-    if (start - limit >= 0) {
-      fetchRows(start - limit);
-    }
+    if (start - limit >= 0) fetchRows(start - limit);
   };
 
   if (!uploadId) return null;
@@ -64,9 +58,10 @@ function FileReader({ uploadId, onClose }) {
         border: '1px solid #ddd',
         borderRadius: '12px',
         padding: '10px',
-        maxHeight: '400px',
-        overflowY: 'auto',
         backgroundColor: '#f9f9f9',
+        maxHeight: '400px',
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       {/* Close button */}
@@ -108,13 +103,36 @@ function FileReader({ uploadId, onClose }) {
         <p>No data available</p>
       ) : (
         <>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead style={{ position: 'sticky', top: 0, backgroundColor: '#73D798', color: '#fff' }}>
-                <tr>
-                  <th style={{ border: '1px solid #ddd', padding: '5px' }}>#</th>
+          {/* Table container with fixed header and visible horizontal scroll */}
+          <div
+            style={{
+              overflow: 'auto',
+              flex: 1,
+              border: '1px solid #ddd',
+              borderRadius: '6px',
+              backgroundColor: '#fff',
+            }}
+          >
+            <table
+              style={{
+                width: '100%',
+                borderCollapse: 'collapse',
+                minWidth: 'max-content',
+              }}
+            >
+              <thead>
+                <tr
+                  style={{
+                    position: 'sticky',
+                    top: 0,
+                    backgroundColor: '#73D798',
+                    color: '#fff',
+                    zIndex: 2,
+                  }}
+                >
+                  <th style={{ border: '1px solid #ddd', padding: '6px' }}>#</th>
                   {fieldnames.map((field) => (
-                    <th key={field} style={{ border: '1px solid #ddd', padding: '5px' }}>
+                    <th key={field} style={{ border: '1px solid #ddd', padding: '6px' }}>
                       {field}
                     </th>
                   ))}
@@ -124,11 +142,13 @@ function FileReader({ uploadId, onClose }) {
                 {rows.map((row, idx) => (
                   <tr
                     key={start + idx}
-                    style={{ backgroundColor: start + idx % 2 === 0 ? '#fff' : '#f1f1f1' }}
+                    style={{
+                      backgroundColor: (start + idx) % 2 === 0 ? '#fff' : '#f9f9f9',
+                    }}
                   >
-                    <td style={{ border: '1px solid #ddd', padding: '5px' }}>{start + idx + 1}</td>
+                    <td style={{ border: '1px solid #ddd', padding: '6px' }}>{start + idx + 1}</td>
                     {fieldnames.map((field) => (
-                      <td key={field} style={{ border: '1px solid #ddd', padding: '5px' }}>
+                      <td key={field} style={{ border: '1px solid #ddd', padding: '6px' }}>
                         {row[field]}
                       </td>
                     ))}
@@ -138,6 +158,7 @@ function FileReader({ uploadId, onClose }) {
             </table>
           </div>
 
+          {/* Pagination controls */}
           <div
             style={{
               display: 'flex',
