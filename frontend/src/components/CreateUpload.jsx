@@ -3,16 +3,12 @@ import axios from 'axios';
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-function Create({ onClose, onCreate }) {
+function CreateUpload({ onClose, onCreate }) {
   const [file, setFile] = useState(null);
   const [customName, setCustomName] = useState('');
   const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState(0);
 
   const backendURL = process.env.REACT_APP_BACKEND_URL;
-
-  const handleFileChange = (e) => setFile(e.target.files[0]);
-  const handleCustomNameChange = (e) => setCustomName(e.target.value);
 
   const handleUpload = async () => {
     if (!file) {
@@ -23,22 +19,15 @@ function Create({ onClose, onCreate }) {
     const token = localStorage.getItem('token');
     const formData = new FormData();
     formData.append('file', file);
-    if (customName) formData.append('custom_name', customName);
+    if (customName.trim()) formData.append('custom_name', customName.trim());
 
     try {
       setUploading(true);
-      setProgress(0);
 
       const response = await axios.post(`${backendURL}/upload`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
           Authorization: `Bearer ${token}`,
-        },
-        onUploadProgress: (progressEvent) => {
-          const percent = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total
-          );
-          setProgress(percent);
         },
       });
 
@@ -62,7 +51,6 @@ function Create({ onClose, onCreate }) {
       );
     } finally {
       setUploading(false);
-      setProgress(0);
     }
   };
 
@@ -93,31 +81,24 @@ function Create({ onClose, onCreate }) {
       >
         <h2 style={{ marginTop: 0 }}>New Upload</h2>
 
-        <label
+        <input
+          type="file"
+          onChange={(e) => setFile(e.target.files[0])}
           style={{
-            display: 'inline-block',
-            padding: '10px 20px',
             marginTop: '10px',
-            backgroundColor: '#4caf50',
-            color: 'white',
-            borderRadius: '12px',
-            cursor: 'pointer',
-            fontWeight: 'bold',
+            width: '100%',
+            padding: '10px',
+            borderRadius: '10px',
+            border: '1px solid #ccc',
           }}
-        >
-          {file ? file.name : 'Choose File'}
-          <input
-            type="file"
-            onChange={handleFileChange}
-            style={{ display: 'none' }}
-          />
-        </label>
+          disabled={uploading}
+        />
 
         <input
           type="text"
           placeholder="Custom name (optional)"
           value={customName}
-          onChange={handleCustomNameChange}
+          onChange={(e) => setCustomName(e.target.value)}
           style={{
             marginTop: '15px',
             width: '100%',
@@ -126,29 +107,8 @@ function Create({ onClose, onCreate }) {
             border: '1px solid #ccc',
             fontSize: '0.95rem',
           }}
+          disabled={uploading}
         />
-
-        {uploading && (
-          <div
-            style={{
-              marginTop: '15px',
-              width: '100%',
-              backgroundColor: '#eee',
-              borderRadius: '5px',
-              height: '10px',
-            }}
-          >
-            <div
-              style={{
-                width: `${progress}%`,
-                height: '100%',
-                backgroundColor: '#4caf50',
-                borderRadius: '5px',
-                transition: 'width 0.2s',
-              }}
-            />
-          </div>
-        )}
 
         <div
           style={{
@@ -184,7 +144,7 @@ function Create({ onClose, onCreate }) {
             }}
             disabled={uploading}
           >
-            {uploading ? `Uploading ${progress}%` : 'Upload'}
+            {uploading ? 'Uploading...' : 'Upload'}
           </button>
         </div>
       </div>
@@ -192,4 +152,4 @@ function Create({ onClose, onCreate }) {
   );
 }
 
-export default Create;
+export default CreateUpload;

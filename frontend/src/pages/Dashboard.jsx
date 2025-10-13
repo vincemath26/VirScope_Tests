@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Create from '../components/Create';
+import CreateWorkspace from '../components/CreateWorkspace';
 import axios from 'axios';
 
 function Dashboard() {
@@ -60,12 +60,12 @@ function Dashboard() {
   const buttonClick = { ...button, transform: 'scale(0.95)' };
 
   const [isClicked, setIsClicked] = useState(null);
-  const [isHoveredUpload, setIsHoveredUpload] = useState(false);
+  const [isHoveredCreate, setIsHoveredCreate] = useState(false);
   const [isHoveredSearch, setIsHoveredSearch] = useState(false);
 
   const buttonStyle = (buttonType) => {
     if (isClicked === buttonType) return buttonClick;
-    if (buttonType === 'upload' && isHoveredUpload) return buttonHover;
+    if (buttonType === 'create' && isHoveredCreate) return buttonHover;
     if (buttonType === 'search' && isHoveredSearch) return buttonHover;
     return button;
   };
@@ -74,7 +74,7 @@ function Dashboard() {
   const openPopup = () => setIsCreateVisible(true);
   const closePopup = () => setIsCreateVisible(false);
 
-  const [virscanFiles, setVirscanFiles] = useState([]);
+  const [workspaces, setWorkspaces] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hoveredIndex, setHoveredIndex] = useState(null);
 
@@ -83,16 +83,16 @@ function Dashboard() {
   const [newName, setNewName] = useState("");
 
   // =========================
-  // Fetch files
+  // Fetch workspaces
   // =========================
-  const fetchFiles = (query = "") => {
+  const fetchWorkspaces = (query = "") => {
     const token = localStorage.getItem('token');
 
-    axios.get(`${backendBaseURL}/uploads`, { headers: { Authorization: `Bearer ${token}` } })
+    axios.get(`${backendBaseURL}/workspaces`, { headers: { Authorization: `Bearer ${token}` } })
       .then(response => {
-        let files = response.data;
-        if (query.trim()) files = files.filter(file => file.name.toLowerCase().includes(query.toLowerCase()));
-        setVirscanFiles(files);
+        let ws = response.data;
+        if (query.trim()) ws = ws.filter(w => w.title.toLowerCase().includes(query.toLowerCase()));
+        setWorkspaces(ws);
       })
       .catch(console.error)
       .finally(() => setIsLoading(false));
@@ -104,24 +104,24 @@ function Dashboard() {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     }
     setIsLoading(true);
-    fetchFiles();
+    fetchWorkspaces();
   }, []);
 
-  const handleSearch = () => { fetchFiles(searchQuery); };
-  const handleNewVirScan = (newFile) => setVirscanFiles(prev => [...prev, newFile]);
+  const handleSearch = () => { fetchWorkspaces(searchQuery); };
+  const handleNewWorkspace = (newWorkspace) => setWorkspaces(prev => [...prev, newWorkspace]);
 
-  const renameFile = (upload_id) => {
+  const renameWorkspace = (workspace_id) => {
     const token = localStorage.getItem("token");
     if (!newName.trim()) { setEditingId(null); return; }
 
     axios.post(
-      `${backendBaseURL}/upload/${upload_id}/rename`,
-      { new_name: newName },
+      `${backendBaseURL}/workspace/${workspace_id}/rename`,
+      { new_title: newName, new_description: "" },
       { headers: { Authorization: `Bearer ${token}` } }
     )
     .then(res => {
-      setVirscanFiles(prev => prev.map(f =>
-        f.upload_id === upload_id ? { ...f, name: res.data.new_name } : f
+      setWorkspaces(prev => prev.map(w =>
+        w.workspace_id === workspace_id ? { ...w, title: res.data.workspace.title } : w
       ));
       setEditingId(null);
     })
@@ -152,33 +152,34 @@ function Dashboard() {
     overflow: 'hidden'
   };
   const cardHover = { transform: 'scale(1.05)', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' };
-  const fileName = { fontWeight: 'bold', fontSize: '1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' };
-  const fileDate = { fontSize: '0.9rem', color: '#666' };
+  const fileTitle = { fontWeight: 'bold', fontSize: '1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' };
+  const fileDescription = { fontSize: '0.9rem', color: '#555', marginTop: '0.3rem', width: '100%' };
+  const fileDate = { fontSize: '0.8rem', color: '#666', marginTop: '0.2rem' };
   const cardRow = { display: 'flex', justifyContent: 'center', gap: '15px', flexWrap: 'wrap', marginBottom: '1rem' };
 
   const renderRows = () => {
     const rows = [];
-    for (let i = 0; i < virscanFiles.length; i += 5) {
-      rows.push({ files: virscanFiles.slice(i, i + 5), startIndex: i });
+    for (let i = 0; i < workspaces.length; i += 5) {
+      rows.push({ workspaces: workspaces.slice(i, i + 5), startIndex: i });
     }
 
     return rows.map((row, rowIndex) => (
       <div key={rowIndex} style={cardRow}>
-        {row.files.map((file, index) => (
+        {row.workspaces.map((ws, index) => (
           <div
-            key={file.upload_id}
-            title={file.name}
+            key={ws.workspace_id}
+            title={ws.title}
             style={{ ...card, ...(hoveredIndex === row.startIndex + index ? cardHover : {}) }}
             onMouseEnter={() => setHoveredIndex(row.startIndex + index)}
             onMouseLeave={() => setHoveredIndex(null)}
-            onClick={() => navigate(`/visualise/${file.upload_id}`)}
+            onClick={() => navigate(`/workspace/${ws.workspace_id}`)}
           >
-            {editingId === file.upload_id ? (
+            {editingId === ws.workspace_id ? (
               <input
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                onBlur={() => renameFile(file.upload_id)}
-                onKeyDown={(e) => { if(e.key === 'Enter') renameFile(file.upload_id) }}
+                onBlur={() => renameWorkspace(ws.workspace_id)}
+                onKeyDown={(e) => { if(e.key === 'Enter') renameWorkspace(ws.workspace_id) }}
                 style={{
                   width: '90%',
                   padding: '0.3rem',
@@ -189,17 +190,14 @@ function Dashboard() {
                 autoFocus
               />
             ) : (
-              <h3
-                style={fileName}
-                onDoubleClick={() => {
-                  setEditingId(file.upload_id);
-                  setNewName(file.name.replace(/\.[^/.]+$/, ""));
-                }}
-              >
-                {file.name}
-              </h3>
+              <>
+                <h3 style={fileTitle} onDoubleClick={() => { setEditingId(ws.workspace_id); setNewName(ws.title); }}>
+                  {ws.title}
+                </h3>
+                <p style={fileDescription}>{ws.description || ''}</p>
+                <p style={fileDate}>{new Date(ws.date_created).toLocaleString()}</p>
+              </>
             )}
-            <p style={fileDate}>{new Date(file.date_created).toLocaleString()}</p>
           </div>
         ))}
       </div>
@@ -240,7 +238,7 @@ function Dashboard() {
         <div style={searchRowStyle}>
           <input
             type="text"
-            placeholder="Search files..."
+            placeholder="Search workspaces..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
@@ -255,24 +253,24 @@ function Dashboard() {
             Search
           </button>
           <button
-            style={buttonStyle('upload')}
+            style={buttonStyle('create')}
             onClick={openPopup}
-            onMouseEnter={() => setIsHoveredUpload(true)}
-            onMouseLeave={() => setIsHoveredUpload(false)}
+            onMouseEnter={() => setIsHoveredCreate(true)}
+            onMouseLeave={() => setIsHoveredCreate(false)}
           >
-            New Analysis
+            New Workspace
           </button>
         </div>
       </div>
 
       <div style={{ marginTop: '2rem', width: '100%', maxWidth: '1200px' }}>
-        <h2 style={{ fontFamily: 'Poppins, sans-serif', marginBottom: '1rem' }}>Your Uploaded Files</h2>
-        {isLoading ? <p>Loading VirScan Files...</p> :
-          virscanFiles.length > 0 ? renderRows() : <p>No uploaded files found.</p>
+        <h2 style={{ fontFamily: 'Poppins, sans-serif', marginBottom: '1rem' }}>Your Workspaces</h2>
+        {isLoading ? <p>Loading Workspaces...</p> :
+          workspaces.length > 0 ? renderRows() : <p>No workspaces found.</p>
         }
       </div>
 
-      {isCreateVisible && <Create onClose={closePopup} onCreate={handleNewVirScan} />}
+      {isCreateVisible && <CreateWorkspace onClose={closePopup} onCreate={handleNewWorkspace} />}
     </div>
   );
 }

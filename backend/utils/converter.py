@@ -4,9 +4,6 @@ from utils import r2
 from utils.viruses.enterovirus import calculate_mean_rpk_difference
 
 def convert_user_upload_to_long(r2_filename: str, overwrite: bool = True) -> str:
-    """
-    Converts a user-uploaded VirScan file to long format and adds Condition based on mean RPK differences.
-    """
     # 1. Fetch file from R2
     file_bytes = r2.fetch_upload_from_r2(r2_filename)
 

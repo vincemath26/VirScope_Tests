@@ -105,6 +105,18 @@ Windows:
 * Go use an Ubuntu (WSL)Terminal OR
 * Use PostgreSQL Tools or services panel to start PostgreSQL.
 
+### Render Postgres Updates
+
+Mostly for software engineer/comp sci students or team who will be updating this in the future, should you need to change the Postgres database in Render, here are the two main commands that you need to do with every change in models.py:
+
+```
+# Notes the change.
+alembic revision --autogenerate -m "Describe your changes"
+
+# Does the updates.
+alembic upgrade head
+```
+
 ### Setting up Python Environment and Dependencies
 
 I have used Python to develop most of my backend functions, specfically this version:

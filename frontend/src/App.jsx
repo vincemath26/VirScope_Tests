@@ -57,7 +57,7 @@ function AppHeaders() {
         
         <Route element={<Authenticated />}>
           <Route path='/dashboard' element={<Dashboard />} />
-          <Route path='/visualise/:uploadId' element={<Visualisation />} />
+          <Route path='/workspace/:workspaceId' element={<Visualisation />} />
         </Route>
       </Routes>
     </>

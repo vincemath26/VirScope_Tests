@@ -1,126 +1,79 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import FileReader from '../components/FileReader';
 import DeleteWarning from '../components/DeleteWarning';
+import RenameWork from '../components/RenameWork.jsx';
+import Dataset from '../components/Dataset.jsx';
 import { toast } from 'react-toastify';
-import Form from '../components/Form';
 import GraphSection from '../components/GraphSection';
-import CircularProgress from '@mui/material/CircularProgress'; // <--- NEW
+import Tutorial from '../components/Tutorial';
 
 function Visualisation() {
-  const { uploadId } = useParams();
+  const { workspaceId } = useParams(); // Only workspaceId now
   const navigate = useNavigate();
-  const [fileName, setFileName] = useState('');
+  const [workspace, setWorkspace] = useState({ title: '', description: '' });
   const [showDeleteWarning, setShowDeleteWarning] = useState(false);
-  const [showPdfForm, setShowPdfForm] = useState(false);
-  const [pdfStatus, setPdfStatus] = useState('');
-  const [pdfUrl, setPdfUrl] = useState('');
-  const [activeTab, setActiveTab] = useState('csv');
-  const [loadCsv, setLoadCsv] = useState(false);
-  const [csvKey, setCsvKey] = useState(0);
-  const [csvLoading, setCsvLoading] = useState(false);
-  const [convertLoading, setConvertLoading] = useState(false);
+  const [showRenameForm, setShowRenameForm] = useState(false);
+  const [activeTab, setActiveTab] = useState('tutorial'); // first tab is Tutorial
 
   const backendBaseURL = process.env.REACT_APP_BACKEND_URL;
-
   const token = localStorage.getItem('token');
-  const axiosConfig = {
-    headers: { Authorization: `Bearer ${token}` }
-  };
+  const axiosConfig = { headers: { Authorization: `Bearer ${token}` } };
 
+  // ------------------------
+  // Fetch workspace info
+  // ------------------------
   useEffect(() => {
-    const fetchFilename = async () => {
+    const fetchWorkspace = async () => {
       try {
-        const response = await axios.get(`${backendBaseURL}/upload/${uploadId}`, axiosConfig);
-        setFileName(response.data.name);
+        const response = await axios.get(`${backendBaseURL}/workspace/${workspaceId}`, axiosConfig);
+        setWorkspace(response.data);
       } catch (err) {
         if (err.response?.status === 403) {
-          toast.error("You do not have permission to access this upload.");
-          navigate('/dashboard');
+          toast.error("You do not have permission to access this workspace.");
         } else if (err.response?.status === 404) {
-          toast.error("Upload not found.");
-          navigate('/dashboard');
+          toast.error("Workspace not found.");
         } else {
           console.error(err);
         }
+        navigate('/dashboard');
       }
     };
-    fetchFilename();
-  }, [uploadId, navigate]);
+    fetchWorkspace();
+  }, [workspaceId, navigate]);
 
-  const handlePdfSubmit = async (payload) => {
-    setShowPdfForm(false);
-    setPdfStatus("Generating PDF...");
-    try {
-      const response = await axios.post(
-        `${backendBaseURL}/generate_pdf/${uploadId}`,
-        payload,
-        { ...axiosConfig, responseType: 'blob' }
-      );
-
-      const blob = new Blob([response.data], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `upload_${uploadId}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-
-      setPdfStatus("PDF ready!");
-    } catch (err) {
-      if (err.response?.status === 403) {
-        toast.error("You do not have permission to generate PDF for this upload.");
-        navigate('/dashboard');
-      } else {
-        console.error(err);
-        setPdfStatus("Error generating PDF.");
-      }
-    }
-  };
-
+  // ------------------------
+  // Delete workspace
+  // ------------------------
   const handleDelete = async () => {
     try {
-      await axios.delete(`${backendBaseURL}/upload/${uploadId}`, axiosConfig);
-      toast.success('Upload deleted successfully');
+      await axios.delete(`${backendBaseURL}/workspace/${workspaceId}`, axiosConfig);
+      toast.success('Workspace deleted successfully');
       navigate('/dashboard');
     } catch (err) {
       if (err.response?.status === 403) {
-        toast.error("You do not have permission to delete this upload.");
-        navigate('/dashboard');
+        toast.error("You do not have permission to delete this workspace.");
       } else {
         console.error(err);
-        toast.error('Error deleting upload: ' + (err.response?.data?.error || err.message));
+        toast.error('Error deleting workspace: ' + (err.response?.data?.error || err.message));
       }
     }
   };
 
-  const handleLoadCsv = () => {
-    setLoadCsv(true);
-    setCsvKey(prev => prev + 1);
-    setCsvLoading(true);
-  };
-
-  const handleCsvLoaded = () => {
-    setCsvLoading(false);
-  };
-
-  const handleConvertToLong = async () => {
-    setConvertLoading(true);
+  // ------------------------
+  // Rename workspace
+  // ------------------------
+  const handleRenameWorkspace = async (newTitle, newDescription) => {
     try {
-      const response = await axios.post(
-        `${backendBaseURL}/convert_long/${uploadId}`,
-        {}, // POST body empty
-        axiosConfig
+      await axios.post(`${backendBaseURL}/workspace/${workspaceId}/rename`, 
+        { new_title: newTitle, new_description: newDescription }, axiosConfig
       );
-      toast.success(response.data.message || 'Upload converted successfully.');
+      toast.success('Workspace renamed successfully');
+      setWorkspace(prev => ({ ...prev, title: newTitle, description: newDescription }));
+      setShowRenameForm(false);
     } catch (err) {
       console.error(err);
-      toast.error(err.response?.data?.error || 'Conversion failed.');
-    } finally {
-      setConvertLoading(false);
+      toast.error('Failed to rename workspace: ' + (err.response?.data?.error || err.message));
     }
   };
 
@@ -129,29 +82,19 @@ function Visualisation() {
       <div style={{ width: '100%', maxWidth: '1200px', padding: '0 20px' }}>
 
         {/* Top Buttons */}
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
           <button
             onClick={() => navigate('/dashboard')}
-            style={{ backgroundColor: '#4caf50', color: 'white', padding: '8px 16px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+            style={{ backgroundColor: '#73D798', color: 'white', padding: '8px 16px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
           >
             Back
           </button>
 
           <button
-            onClick={() => {
-              setPdfStatus('');
-              setShowPdfForm(true);
-            }}
-            style={{
-              backgroundColor: '#4caf50',
-              color: 'white',
-              padding: '8px 16px',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
+            onClick={() => setShowRenameForm(true)}
+            style={{ backgroundColor: '#73D798', color: 'white', padding: '8px 16px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
           >
-            Generate PDF
+            Rename
           </button>
 
           <button
@@ -162,27 +105,41 @@ function Visualisation() {
           </button>
         </div>
 
-        {/* PDF Form */}
-        {showPdfForm && (
-          <Form onSubmit={handlePdfSubmit} onCancel={() => setShowPdfForm(false)} />
-        )}
+        {/* Workspace Title and Description */}
+        <div style={{ marginBottom: '20px' }}>
+          <h1 style={{ margin: 0 }}>{workspace.title || 'Untitled Workspace'}</h1>
+          <p style={{ margin: '5px 0 0 0', color: '#555' }}>
+            {workspace.description || 'No description provided.'}
+          </p>
+        </div>
 
-        {/* Show Status only after submission */}
-        {pdfStatus && (
-          <div style={{ marginTop: '10px', marginBottom: '20px' }}>
-            <div>Status: {pdfStatus}</div>
-            {pdfUrl && (
-              <div>
-                <a href={pdfUrl} target="_blank" rel="noopener noreferrer">
-                  Download PDF
-                </a>
-              </div>
-            )}
-          </div>
+        {/* Rename Form */}
+        {showRenameForm && (
+          <RenameWork
+            onSubmit={handleRenameWorkspace}
+            onCancel={() => setShowRenameForm(false)}
+            initialTitle={workspace.title}
+            initialDescription={workspace.description}
+          />
         )}
 
         {/* Tabs */}
         <div style={{ display: 'flex', borderBottom: '2px solid #ccc', marginBottom: '20px' }}>
+          <div
+            onClick={() => setActiveTab('tutorial')}
+            style={{
+              padding: '10px 20px',
+              cursor: 'pointer',
+              borderTopLeftRadius: '4px',
+              borderTopRightRadius: '4px',
+              backgroundColor: activeTab === 'tutorial' ? 'white' : '#f0f0f0',
+              border: activeTab === 'tutorial' ? '2px solid #73D798' : '2px solid transparent',
+              borderBottom: activeTab === 'tutorial' ? 'none' : '2px solid #ccc',
+              fontWeight: activeTab === 'tutorial' ? 'bold' : 'normal'
+            }}
+          >
+            Tutorial
+          </div>
           <div
             onClick={() => setActiveTab('csv')}
             style={{
@@ -191,12 +148,12 @@ function Visualisation() {
               borderTopLeftRadius: '4px',
               borderTopRightRadius: '4px',
               backgroundColor: activeTab === 'csv' ? 'white' : '#f0f0f0',
-              border: activeTab === 'csv' ? '2px solid #4caf50' : '2px solid transparent',
+              border: activeTab === 'csv' ? '2px solid #73D798' : '2px solid transparent',
               borderBottom: activeTab === 'csv' ? 'none' : '2px solid #ccc',
               fontWeight: activeTab === 'csv' ? 'bold' : 'normal'
             }}
           >
-            CSV Preview
+            Datasets
           </div>
           <div
             onClick={() => setActiveTab('graph')}
@@ -206,7 +163,7 @@ function Visualisation() {
               borderTopLeftRadius: '4px',
               borderTopRightRadius: '4px',
               backgroundColor: activeTab === 'graph' ? 'white' : '#f0f0f0',
-              border: activeTab === 'graph' ? '2px solid #4caf50' : '2px solid transparent',
+              border: activeTab === 'graph' ? '2px solid #73D798' : '2px solid transparent',
               borderBottom: activeTab === 'graph' ? 'none' : '2px solid #ccc',
               fontWeight: activeTab === 'graph' ? 'bold' : 'normal'
             }}
@@ -216,63 +173,15 @@ function Visualisation() {
         </div>
 
         {/* Tab Content */}
-        {activeTab === 'csv' && (
-          <>
-            <h2>CSV Preview of {fileName || 'Upload'}</h2>
-
-            {/* Always visible buttons with spinner, side by side */}
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-              <button
-                onClick={handleLoadCsv}
-                disabled={csvLoading}
-                style={{
-                  backgroundColor: csvLoading ? '#a5d6a7' : '#4caf50',
-                  color: 'white',
-                  padding: '8px 16px',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: csvLoading ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
-              >
-                {csvLoading && <CircularProgress size={18} color="inherit" />}
-                {csvLoading ? 'Loading CSV...' : loadCsv ? 'Reload CSV Preview' : 'Load CSV Preview'}
-              </button>
-
-              <button
-                onClick={handleConvertToLong}
-                disabled={convertLoading}
-                style={{
-                  backgroundColor: convertLoading ? '#a5d6a7' : '#4caf50', // same green
-                  color: 'white',
-                  padding: '8px 16px',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: convertLoading ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
-              >
-                {convertLoading && <CircularProgress size={18} color="inherit" />}
-                {convertLoading ? 'Converting...' : 'Convert Wide to Long'}
-              </button>
-            </div>
-
-            {/* Render CSV only after button clicked */}
-            {loadCsv && <FileReader key={csvKey} uploadId={uploadId} onLoadEnd={handleCsvLoaded} />}
-          </>
-        )}
-
-        {activeTab === 'graph' && <GraphSection uploadId={uploadId} />}
+        {activeTab === 'tutorial' && <Tutorial />}
+        {activeTab === 'csv' && <Dataset />}
+        {activeTab === 'graph' && <GraphSection uploadId={null} />}
 
         {/* Delete Warning */}
         <DeleteWarning
           open={showDeleteWarning}
           title="Confirm Delete"
-          message="Are you sure you want to delete this upload? This action cannot be undone."
+          message="Are you sure you want to delete this workspace? This action cannot be undone."
           onConfirm={() => { handleDelete(); setShowDeleteWarning(false); }}
           onCancel={() => setShowDeleteWarning(false)}
         />
