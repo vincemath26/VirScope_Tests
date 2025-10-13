@@ -107,7 +107,7 @@ Windows:
 
 ### Render Postgres Updates
 
-Mostly for software engineer/comp sci students or team who will be updating this in the future, should you need to change the Postgres database in Render, here are the two main commands that you need to do with every change in models.py:
+Mostly for software engineer/comp-sci students or team who will be updating this in the future, should you need to change the Postgres database in Render, here are the two main commands that you need to do with every change in models.py:
 
 ```
 # Notes the change.
@@ -164,6 +164,12 @@ To quit this virtual environment, please just do the following command on your t
 
 ```
 deactivate
+```
+
+For software engineering/comp-sci students or team looking to upgrade this web application and have library updates, remember to keep updating the requirements.txt for everyone else.
+
+```
+pip freeze > requirements.txt
 ```
 
 ### Setting up other aspects
