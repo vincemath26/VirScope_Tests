@@ -96,8 +96,10 @@ def replace_upload(upload_id):
             # Upload new file
             file.seek(0)
             upload_file_to_r2(r2_client, bucket, file, name_with_ext)
-            # Delete old file from R2
-            delete_file_from_r2(r2_client, bucket, upload.name)
+            
+            # Only delete the old file if the name is different
+            if upload.name != name_with_ext:
+                delete_file_from_r2(r2_client, bucket, upload.name)
         except Exception as e:
             return jsonify({"error": f"Failed to replace file in R2: {e}"}), 500
 

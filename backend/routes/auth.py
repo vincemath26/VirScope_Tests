@@ -5,6 +5,11 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 import jwt
 import datetime
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
 
 # Define Blueprint
 auth_bp = Blueprint('auth', __name__)
@@ -92,6 +97,8 @@ def register():
         # Generate JWT token for new user
         token = jwt.encode({'user_id': new_user.user_id}, current_app.secret_key, algorithm='HS256')
 
+        logger.info(f"New user called '{username}' registered!")
+
     return jsonify({
         'message': 'User registered successfully',
         'token': token,
@@ -103,14 +110,13 @@ def login():
     from app import engine  # lazy import engine
     data = request.get_json() or {}
 
-    # Add a log to see the received data
-    print("Received login data:", data)
-
     username_or_email = data.get('username')
     password = data.get('password')
 
     if not username_or_email or not password:
         return jsonify({'error': 'Missing username/email or password'}), 400
+
+    logger.info(f"Login attempt by '{username_or_email}'")
 
     with SqlAlchemySession(engine) as db_session:
         user = db_session.query(User).filter(
@@ -122,15 +128,15 @@ def login():
             token = jwt.encode(
                 {'user_id': user.user_id}, current_app.secret_key, algorithm='HS256'
             )
-            # Log the response being sent to the client
-            print(f"Login successful. Sending token and user_id: {token}, {user.user_id}")
+            logger.info(f"User '{user.username}' logged in!")
             return jsonify({'message': 'Login successful', 'token': token, 'user_id': user.user_id}), 200
 
-    print("Invalid credentials or user not found")
+    logger.warning(f"Failed login attempt for '{username_or_email}'")
     return jsonify({'error': 'Invalid credentials'}), 401
 
 @auth_bp.route('/logout', methods=['POST'])
 def logout():
+    from app import engine  # lazy import engine
     # Get the token from the Authorization header
     token = request.headers.get('Authorization')
     if not token:
@@ -138,8 +144,6 @@ def logout():
 
     # Strip the 'Bearer ' prefix if it exists
     token = token.replace('Bearer ', '', 1)
-    
-    print(f"Received token: {token}")  # Debug: Log the token
 
     try:
         # If using JWT, decode it to validate and get user info
@@ -148,9 +152,15 @@ def logout():
 
         if not user_id:
             return jsonify({'error': 'Invalid token: User ID not found'}), 401
-        
+
+        with SqlAlchemySession(engine) as db_session:
+            user = db_session.query(User).filter_by(user_id=user_id).first()
+            username = user.username if user else f"ID {user_id}"
+
         # Optionally clear the session
         session.pop('user_id', None)
+
+        logger.info(f"User '{username}' logged out!")
 
         return jsonify({'message': 'Logout successful'}), 200
     except jwt.ExpiredSignatureError:

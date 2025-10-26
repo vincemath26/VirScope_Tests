@@ -34,25 +34,30 @@ def save_plot_to_file_or_buf(plt_obj, output_path=None):
         plt_obj.savefig(output_path, dpi=300, bbox_inches='tight')
         plt_obj.close()
         return send_file(output_path, mimetype='image/png', as_attachment=False)
+
     buf = io.BytesIO()
     plt_obj.savefig(buf, format='png', dpi=300, bbox_inches='tight')
     plt_obj.close()
     buf.seek(0)
-    return send_file(buf, mimetype="image/png")
+    return buf.getvalue()
 
 # -----------------------
 # Plot RPK stacked bar
 # -----------------------
 def plot_rpk_stacked_barplot(df, top_n_species=10, output_path=None):
-    # Aggregate duplicates by sample_id + taxon_species
-    df_agg = df.groupby(['sample_id', 'taxon_species'], as_index=False)['rpk'].sum()
+    REQUIRED_COLS = {'sample_id', 'taxon_species'}
+    is_raw_df = REQUIRED_COLS.issubset(df.columns)
 
-    # Select top N species by total RPK
-    top_species = df_agg.groupby('taxon_species')['rpk'].sum().nlargest(top_n_species).index
-    plot_df = df_agg[df_agg['taxon_species'].isin(top_species)]
-
-    pivot_df = plot_df.pivot(index='sample_id', columns='taxon_species', values='rpk').fillna(0)
-    pivot_df = pivot_df[top_species]  # Ensure consistent species order
+    if is_raw_df:
+        if 'rpk' not in df.columns:
+            df = compute_rpk(df)
+        df_agg = df.groupby(['sample_id', 'taxon_species'], as_index=False)['rpk'].sum()
+        top_species = df_agg.groupby('taxon_species')['rpk'].sum().nlargest(top_n_species).index
+        plot_df = df_agg[df_agg['taxon_species'].isin(top_species)]
+        pivot_df = plot_df.pivot(index='sample_id', columns='taxon_species', values='rpk').fillna(0)
+        pivot_df = pivot_df[top_species]
+    else:
+        pivot_df = df.copy()
 
     fig, ax = plt.subplots(figsize=(10, 6))
     pivot_df.plot(kind='bar', stacked=True, ax=ax)
@@ -61,29 +66,34 @@ def plot_rpk_stacked_barplot(df, top_n_species=10, output_path=None):
     ax.set_title("Stacked Bar Plot of RPK per Species")
     plt.xticks(rotation=45, ha='right')
     plt.tight_layout()
-    return save_plot_to_file_or_buf(plt, output_path)
+
+    img_bytes = save_plot_to_file_or_buf(plt, output_path)
+    # If save_plot_to_file_or_buf returned a Response (when output_path set),
+    # propagate it upward (caller may expect a Response).
+    if output_path:
+        return img_bytes
+    # Otherwise it's bytes
+    return img_bytes
 
 # -----------------------
 # Plot RPK heatmap
 # -----------------------
 def plot_rpk_heatmap(df, top_n_species=20, output_path=None):
-    # Compute RPK if not already done
-    if 'rpk' not in df.columns:
-        df = compute_rpk(df)
+    REQUIRED_COLS = {'sample_id', 'taxon_species'}
+    is_raw_df = REQUIRED_COLS.issubset(df.columns)
 
-    # Aggregate duplicates
-    df_agg = df.groupby(['sample_id', 'taxon_species'], as_index=False)['rpk'].sum()
+    if is_raw_df:
+        if 'rpk' not in df.columns:
+            df = compute_rpk(df)
+        df_agg = df.groupby(['sample_id', 'taxon_species'], as_index=False)['rpk'].sum()
+        top_species = df_agg.groupby('taxon_species')['rpk'].sum().nlargest(top_n_species).index
+        df_agg = df_agg[df_agg['taxon_species'].isin(top_species)]
+        pivot_df = df_agg.pivot(index='taxon_species', columns='sample_id', values='rpk').fillna(0)
+    else:
+        pivot_df = df.copy()
 
-    # Select top N species by total RPK
-    top_species = df_agg.groupby('taxon_species')['rpk'].sum().nlargest(top_n_species).index
-    df_agg = df_agg[df_agg['taxon_species'].isin(top_species)]
-
-    # Pivot for heatmap
-    pivot_df = df_agg.pivot(index='taxon_species', columns='sample_id', values='rpk').fillna(0)
-    
-    # Plot
     fig, ax = plt.subplots(figsize=(12, 8))
-    cax = ax.imshow(pivot_df, aspect='auto', cmap='viridis')
+    cax = ax.imshow(pivot_df.values, aspect='auto', cmap='viridis')
     ax.set_xticks(np.arange(len(pivot_df.columns)))
     ax.set_xticklabels(pivot_df.columns, rotation=45, ha='right')
     ax.set_yticks(np.arange(len(pivot_df.index)))
@@ -91,7 +101,10 @@ def plot_rpk_heatmap(df, top_n_species=20, output_path=None):
     fig.colorbar(cax, ax=ax, label='RPK')
     plt.tight_layout()
 
-    return save_plot_to_file_or_buf(plt, output_path)
+    img_bytes = save_plot_to_file_or_buf(plt, output_path)
+    if output_path:
+        return img_bytes
+    return img_bytes
 
 # -----------------------
 # Plot BLAST peptide alignment
@@ -170,7 +183,7 @@ def generate_pdf(upload_id, payload, app=None, return_buffer=False):
     from fpdf import FPDF
 
     pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_auto_page_break(auto=False)
 
     graphs = payload.get("graphs", [])
     if not graphs:
@@ -178,28 +191,22 @@ def generate_pdf(upload_id, payload, app=None, return_buffer=False):
 
     upload_path = load_upload_file(upload_id, app)
     df = pd.read_csv(upload_path, sep=None, engine="python")
+    df = compute_rpk(df)
 
     def get_graph_text(graph_type):
         with Session() as session:
             gt = session.query(GraphText).filter_by(upload_id=upload_id, graph_type=graph_type).first()
             return gt.text if gt else ""
 
-    def resp_to_pngfile(resp_bytes):
+    def get_png_file(img_bytes):
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-        try:
-            tmp.write(resp_bytes)
-            tmp.flush()
-            tmp.close()
-            return tmp.name
-        except Exception:
-            try:
-                tmp.close()
-            except Exception:
-                pass
-            os.unlink(tmp.name)
-            raise
+        tmp.write(img_bytes)
+        tmp.flush()
+        tmp.close()
+        return tmp.name
 
     def get_bytes_from_response(resp):
+        """Convert a response-like object to bytes."""
         if isinstance(resp, (bytes, bytearray)):
             return bytes(resp)
         get_data = getattr(resp, "get_data", None)
@@ -210,14 +217,6 @@ def generate_pdf(upload_id, payload, app=None, return_buffer=False):
         data_attr = getattr(resp, "data", None)
         if data_attr is not None:
             return data_attr
-        body = b""
-        gen = getattr(resp, "response", None)
-        if gen is not None:
-            for chunk in gen:
-                if isinstance(chunk, str):
-                    chunk = chunk.encode()
-                body += chunk
-            return body
         raise RuntimeError("Could not extract bytes from response object")
 
     for g in graphs:
@@ -227,32 +226,36 @@ def generate_pdf(upload_id, payload, app=None, return_buffer=False):
 
         if gtype == "heatmap":
             top_n = int(g.get("topN", 20))
-            df = compute_rpk(df)
-            resp = plot_rpk_heatmap(df, top_n_species=top_n, output_path=None)
+            df_grouped = df.groupby(['taxon_species', 'sample_id'])['rpk'].mean().reset_index()
+            pivot = df_grouped.pivot(index='taxon_species', columns='sample_id', values='rpk').fillna(0)
+            top_species = pivot.sum(axis=1).nlargest(top_n).index
+            pivot = pivot.loc[top_species]
+            pivot = pivot[sorted(pivot.columns)]
+            resp = plot_rpk_heatmap(pivot, top_n_species=top_n, output_path=None)
             img_bytes = get_bytes_from_response(resp)
 
         elif gtype == "barplot":
             top_n = int(g.get("topN", 10))
-            df = compute_rpk(df)
-            resp = plot_rpk_stacked_barplot(df, top_n_species=top_n, output_path=None)
+            df_grouped = df.groupby(['taxon_species', 'sample_id'])['rpk'].mean().reset_index()
+            pivot = df_grouped.pivot(index='sample_id', columns='taxon_species', values='rpk').fillna(0)
+            top_species = pivot.sum(axis=0).nlargest(top_n).index
+            pivot = pivot[top_species]
+            pivot = pivot.sort_index(axis=1)
+            resp = plot_rpk_stacked_barplot(pivot, top_n_species=top_n, output_path=None)
             img_bytes = get_bytes_from_response(resp)
 
         elif gtype == "antigen_map":
             win_size = int(g.get("win_size", 32))
             step_size = int(g.get("step_size", 4))
-
             diamond_db_path = current_app.config.get(
                 "COXSACKIE_DB_PATH",
                 os.path.join(current_app.root_path, "data", "blast_databases", "coxsackievirusB1_P08291_db.dmnd")
             )
-
             cache_folder = current_app.config.get(
                 "CACHE_FOLDER",
                 os.path.join(current_app.root_path, "uploads", "cache")
             )
             os.makedirs(cache_folder, exist_ok=True)
-            current_app.logger.info(f"Antigen map cache folder: {cache_folder}")
-
             moving_sum_df, ev_df, _ = prepare_antigen_map_df(
                 upload_id,
                 df,
@@ -261,43 +264,44 @@ def generate_pdf(upload_id, payload, app=None, return_buffer=False):
                 step_size=step_size,
                 cache_folder=cache_folder
             )
-
             resp = plot_antigen_map(moving_sum_df, ev_df=ev_df, output_path=None)
-            img_bytes = get_bytes_from_response(resp)
-
-        elif gtype == "blast_alignment":
-            query_fasta = g.get("query_fasta")
-            db_path = g.get("db_path")
-            output_path = g.get("output_path")
-            resp = plot_blast_peptide_alignment(query_fasta, db_path, output_path)
             img_bytes = get_bytes_from_response(resp)
 
         else:
             continue
 
-        tmp_png = resp_to_pngfile(img_bytes)
+        tmp_png = get_png_file(img_bytes)
+        text = get_graph_text(gtype)
+
+        # ---------------- Page Layout ----------------
+        pdf.add_page()
+        pdf.set_font("Arial", "B", 16)
+        pdf.cell(0, 10, "VirScope", ln=1, align="C")
+
+        pdf.set_xy(10, 20)
+        chart_height = pdf.h * 0.55
+        text_top = 20 + chart_height + 5
+
+        # Chart top half
+        pdf.image(tmp_png, x=10, y=20, w=pdf.w - 20, h=chart_height)
+
+        # Text bottom half
+        if text:
+            pdf.set_xy(10, text_top)
+            pdf.set_font("Arial", size=12)
+            pdf.multi_cell(w=pdf.w - 20, h=6, txt=text)
+
+        # Cleanup
         try:
-            pdf.add_page()
-            try:
-                pdf.image(tmp_png, x=10, y=30, w=pdf.w - 20)
-            except RuntimeError:
-                pdf.image(tmp_png, x=10, y=30, w=pdf.w - 40)
-            text = get_graph_text(gtype)
-            if text:
-                pdf.set_xy(10, pdf.get_y() + (pdf.h * 0.55))
-                pdf.set_font("Arial", size=12)
-                pdf.multi_cell(w=pdf.w - 20, h=6, txt=text)
-        finally:
-            try:
-                os.unlink(tmp_png)
-            except Exception:
-                pass
+            os.unlink(tmp_png)
+        except:
+            pass
 
     if return_buffer:
         pdf_bytes = pdf.output(dest='S').encode('latin1')
-        pdf_buf = io.BytesIO(pdf_bytes)
-        pdf_buf.seek(0)
-        return pdf_buf
+        buf = io.BytesIO(pdf_bytes)
+        buf.seek(0)
+        return buf
 
     pdf_path = os.path.join(current_app.config['UPLOAD_FOLDER'], f"upload_{upload_id}.pdf")
     pdf.output(pdf_path)

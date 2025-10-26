@@ -7,6 +7,7 @@ function CreateBase({ workspaceId, existingFile, onSuccess, onClose }) {
   const [file, setFile] = useState(null);
   const [customName, setCustomName] = useState(existingFile ? existingFile.name : '');
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0); // New state for progress bar
 
   const backendURL = process.env.REACT_APP_BACKEND_URL;
 
@@ -26,30 +27,28 @@ function CreateBase({ workspaceId, existingFile, onSuccess, onClose }) {
     formData.append('file', file);
     if (customName) formData.append('custom_name', customName);
 
+    if (!existingFile) {
+      formData.append('workspace_id', workspaceId);
+      formData.append('file_type', 'base');
+    }
+
     try {
       setUploading(true);
+      setProgress(0);
 
-      if (existingFile) {
-        // Replace existing base file
-        await axios.post(
-          `${backendURL}/upload/${existingFile.upload_id}/replace`,
-          formData,
-          { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } }
-        );
-        toast.success('Base file replaced successfully!');
-      } else {
-        // Upload new base file
-        formData.append('workspace_id', workspaceId);
-        formData.append('file_type', 'base');
+      const url = existingFile
+        ? `${backendURL}/upload/${existingFile.upload_id}/replace`
+        : `${backendURL}/upload`;
 
-        await axios.post(
-          `${backendURL}/upload`,
-          formData,
-          { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } }
-        );
-        toast.success('Base file uploaded successfully!');
-      }
+      await axios.post(url, formData, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (progressEvent) => {
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setProgress(percentCompleted);
+        },
+      });
 
+      toast.success(existingFile ? 'Base file replaced successfully!' : 'Base file uploaded successfully!');
       onSuccess();
       onClose();
     } catch (err) {
@@ -57,6 +56,7 @@ function CreateBase({ workspaceId, existingFile, onSuccess, onClose }) {
       toast.error('Upload failed: ' + (err.response?.data?.error || err.message));
     } finally {
       setUploading(false);
+      setProgress(0);
     }
   };
 
@@ -112,6 +112,20 @@ function CreateBase({ workspaceId, existingFile, onSuccess, onClose }) {
           }}
           disabled={uploading}
         />
+
+        {uploading && (
+          <div style={{ marginTop: '15px', width: '100%', backgroundColor: '#eee', borderRadius: '10px' }}>
+            <div
+              style={{
+                width: `${progress}%`,
+                height: '10px',
+                backgroundColor: '#4caf50',
+                borderRadius: '10px',
+                transition: 'width 0.2s',
+              }}
+            />
+          </div>
+        )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '25px', gap: '10px' }}>
           <button

@@ -37,26 +37,48 @@ def get_upload_or_forbidden(session, upload_id, user_id):
 def species_counts_heatmap(upload_id):
     user_id = g.current_user_id
     top_n_species = int(request.args.get('top_n_species', 20))
+
     with Session() as session:
         upload, err_resp, status = get_upload_or_forbidden(session, upload_id, user_id)
         if err_resp:
             return err_resp, status
+
     df = pd.read_csv(load_upload_file(upload_id, current_app), sep=None, engine="python")
     df = compute_rpk(df)
-    return plot_rpk_heatmap(df, top_n_species=top_n_species, output_path=None)
+
+    grouped = df.groupby(['taxon_species', 'sample_id'])['rpk'].mean().reset_index()
+    heatmap_data = grouped.pivot(index='taxon_species', columns='sample_id', values='rpk').fillna(0)
+    top_species = heatmap_data.sum(axis=1).nlargest(top_n_species).index
+    heatmap_data = heatmap_data.loc[top_species]
+    heatmap_data = heatmap_data[sorted(heatmap_data.columns)]
+
+    img_bytes = plot_rpk_heatmap(heatmap_data, top_n_species=top_n_species, output_path=None)
+    return send_file(io.BytesIO(img_bytes), mimetype="image/png", as_attachment=False,
+                     download_name=f"species_counts_{upload_id}.png")
 
 @visualisation_bp.route('/species_reactivity_stacked_barplot/png/<int:upload_id>', methods=['GET'])
 @jwt_required
 def species_stacked_barplot(upload_id):
     user_id = g.current_user_id
     top_n_species = int(request.args.get('top_n_species', 10))
+
     with Session() as session:
         upload, err_resp, status = get_upload_or_forbidden(session, upload_id, user_id)
         if err_resp:
             return err_resp, status
+
     df = pd.read_csv(load_upload_file(upload_id, current_app), sep=None, engine="python")
     df = compute_rpk(df)
-    return plot_rpk_stacked_barplot(df, top_n_species=top_n_species, output_path=None)
+
+    grouped = df.groupby(['taxon_species', 'sample_id'])['rpk'].mean().reset_index()
+    pivot_df = grouped.pivot(index='sample_id', columns='taxon_species', values='rpk').fillna(0)
+    top_species = pivot_df.sum(axis=0).nlargest(top_n_species).index
+    pivot_df = pivot_df[top_species]
+    pivot_df = pivot_df.sort_index(axis=1)
+
+    img_bytes = plot_rpk_stacked_barplot(pivot_df, top_n_species=top_n_species, output_path=None)
+    return send_file(io.BytesIO(img_bytes), mimetype="image/png", as_attachment=False,
+                     download_name=f"species_reactivity_{upload_id}.png")
 
 @visualisation_bp.route('/antigen_map/png/<int:upload_id>', methods=['GET'])
 @jwt_required

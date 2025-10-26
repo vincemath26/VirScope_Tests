@@ -3,10 +3,11 @@ import axios from 'axios';
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-function CreateMetadata({ workspaceId, onSuccess, onClose }) {
+function CreateMetadata({ workspaceId, existingFile, onSuccess, onClose }) {
   const [file, setFile] = useState(null);
-  const [customName, setCustomName] = useState('');
+  const [customName, setCustomName] = useState(existingFile ? existingFile.name : '');
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   const backendURL = process.env.REACT_APP_BACKEND_URL;
   const token = localStorage.getItem('token');
@@ -17,19 +18,37 @@ function CreateMetadata({ workspaceId, onSuccess, onClose }) {
       return;
     }
 
+    if (!token) {
+      toast.error('No token found. Please log in again.');
+      return;
+    }
+
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('workspace_id', workspaceId);
-    formData.append('file_type', 'metadata');
     if (customName) formData.append('custom_name', customName);
+
+    if (!existingFile) {
+      formData.append('workspace_id', workspaceId);
+      formData.append('file_type', 'metadata');
+    }
 
     try {
       setUploading(true);
-      await axios.post(`${backendURL}/upload`, formData, {
+      setProgress(0);
+
+      const url = existingFile
+        ? `${backendURL}/upload/${existingFile.upload_id}/replace`
+        : `${backendURL}/upload`;
+
+      await axios.post(url, formData, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (progressEvent) => {
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setProgress(percentCompleted);
+        },
       });
 
-      toast.success('Metadata file uploaded successfully!');
+      toast.success(existingFile ? 'Metadata file replaced successfully!' : 'Metadata file uploaded successfully!');
       onSuccess();
       onClose();
     } catch (err) {
@@ -37,6 +56,7 @@ function CreateMetadata({ workspaceId, onSuccess, onClose }) {
       toast.error('Upload failed: ' + (err.response?.data?.error || err.message));
     } finally {
       setUploading(false);
+      setProgress(0);
     }
   };
 
@@ -67,7 +87,7 @@ function CreateMetadata({ workspaceId, onSuccess, onClose }) {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 style={{ marginTop: 0 }}>Upload Metadata File</h2>
+        <h2 style={{ marginTop: 0 }}>{existingFile ? 'Replace Metadata File' : 'Upload Metadata File'}</h2>
 
         <input
           type="file"
@@ -92,6 +112,20 @@ function CreateMetadata({ workspaceId, onSuccess, onClose }) {
           }}
           disabled={uploading}
         />
+
+        {uploading && (
+          <div style={{ marginTop: '15px', width: '100%', backgroundColor: '#eee', borderRadius: '10px' }}>
+            <div
+              style={{
+                width: `${progress}%`,
+                height: '10px',
+                backgroundColor: '#4caf50',
+                borderRadius: '10px',
+                transition: 'width 0.2s',
+              }}
+            />
+          </div>
+        )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '25px', gap: '10px' }}>
           <button
@@ -121,7 +155,7 @@ function CreateMetadata({ workspaceId, onSuccess, onClose }) {
             }}
             disabled={uploading || !file}
           >
-            {uploading ? 'Uploading...' : 'Upload'}
+            {uploading ? (existingFile ? 'Replacing...' : 'Uploading...') : existingFile ? 'Replace' : 'Upload'}
           </button>
         </div>
       </div>
