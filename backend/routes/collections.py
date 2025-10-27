@@ -321,7 +321,7 @@ def preview_csv(upload_id):
 # -----------------------
 REQUIRED_COLUMNS = {
     "antigen_map": ["pep_id", "pep_aa", "pos_start", "pos_end", "taxon_species", "sample_id", "abundance", "Condition"],
-    "exploratory": ["taxon_species", "sample_id"]
+    "exploratory": ["taxon_species", "sample_id", 'abundance']
 }
 
 @collection_bp.route('/uploads/<int:upload_id>/check-columns', methods=['GET'])
