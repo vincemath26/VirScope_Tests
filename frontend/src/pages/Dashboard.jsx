@@ -13,7 +13,7 @@ function Dashboard() {
   // Styles
   // =========================
   const dashboardContainer = { 
-    marginTop: '2%', 
+    marginTop: 'clamp(4rem, 10vh, 8rem)',
     padding: '2rem', 
     display: 'flex', 
     flexDirection: 'column', 
