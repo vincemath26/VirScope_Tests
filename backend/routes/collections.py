@@ -347,7 +347,7 @@ def preview_csv(upload_id):
 # Check CSV file (optimized)
 # -----------------------
 REQUIRED_COLUMNS = {
-    "antigen_map": ["pep_id", "pep_aa", "pos_start", "pos_end", "taxon_species", "sample_id", "abundance", "Condition"],
+    "antigen_map": ["pep_id", "pep_aa", "taxon_species", "sample_id", "abundance", "Condition"],
     "exploratory": ["taxon_species", "sample_id", 'abundance']
 }
 
