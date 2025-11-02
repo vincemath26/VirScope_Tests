@@ -73,25 +73,30 @@ def calculate_mean_rpk_difference(df, pep_col='pep_id', cond_col='Condition', rp
 # Compute moving sum
 # -----------------------
 def calculate_moving_sum(df, value_column='mean_rpk_difference', win_size=32, step_size=4):
-    if not {'sstart', 'send', value_column}.issubset(df.columns):
-        raise ValueError(f"Missing required columns for moving sum: 'sstart', 'send', '{value_column}'")
-    min_start = int(df['sstart'].min())
-    max_end = int(df['send'].max())
+    # Deduplicate per peptide
+    df_unique = df.drop_duplicates(subset=['qseqid'])
+
+    min_start = int(df_unique['sstart'].min())
+    max_end = int(df_unique['send'].max())
     window_starts = np.arange(min_start, max_end - win_size + 2, step_size)
     moving_rows = []
+
     for ws in window_starts:
         we = ws + win_size - 1
-        mask = (df['sstart'] <= ws) & (df['send'] >= we)
+        # Only sum each peptide once
+        mask = (df_unique['sstart'] <= ws) & (df_unique['send'] >= we)
         if mask.any():
-            tmp = df.loc[mask].copy()
-            tmp['window_start'] = ws
-            tmp['window_end'] = we
-            tmp['moving_sum'] = tmp[value_column].sum()
-            moving_rows.append(tmp)
+            moving_sum_value = df_unique.loc[mask, value_column].sum()
+            moving_rows.append({
+                'window_start': ws,
+                'window_end': we,
+                'moving_sum': moving_sum_value
+            })
+
     if moving_rows:
-        return pd.concat(moving_rows, ignore_index=True)
+        return pd.DataFrame(moving_rows)
     else:
-        return pd.DataFrame(columns=list(df.columns) + ['window_start', 'window_end', 'moving_sum'])
+        return pd.DataFrame(columns=['window_start', 'window_end', 'moving_sum'])
 
 # -----------------------
 # Plot antigen map
