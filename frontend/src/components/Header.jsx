@@ -7,48 +7,52 @@ function Header() {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '0 1rem',
+    padding: '0.5rem 1rem',
     backgroundColor: '#d3d3d3',
     color: '#ffffff',
     position: 'fixed',
     width: '100%',
-    height: '5%',
     top: 0,
     left: 0,
-    zIndex: 1000
+    zIndex: 1000,
+    height: 'auto', // allow flexible height for smaller screens
+    minHeight: '3.5rem', // ensures a good tap area on phones
+    boxSizing: 'border-box',
   };
 
   const headerTitle = {
     textAlign: 'center',
     color: '#ffffff',
     fontFamily: 'Poppins, sans-serif',
-    margin: 0
+    margin: 0,
+    fontSize: '1.2rem',
+    flex: 1, // ensures title stays centered properly on small screens
   };
 
   const button = {
     color: '#000000',
-    fontSize: '1rem',
-    height: '70%',
-    width: '6rem',
+    fontSize: '0.9rem', // slightly smaller for phones
+    padding: '0.4rem 1rem', // better scaling than fixed height/width
     borderStyle: 'solid',
     borderColor: '#73D798',
     borderWidth: '3px',
     borderRadius: '20px',
     backgroundColor: '#ffffff',
     boxSizing: 'border-box',
-    margin: '2rem',
-    transition: 'all 0.3s ease'
+    margin: '0.5rem',
+    transition: 'all 0.3s ease',
+    whiteSpace: 'nowrap', // prevent wrapping of "Logout"
   };
 
   const buttonHover = {
     ...button,
     backgroundColor: '#73D798',
-    color: '#ffffff'
+    color: '#ffffff',
   };
 
   const buttonClick = {
     ...button,
-    transform: 'scale(0.95)'
+    transform: 'scale(0.95)',
   };
 
   const [isClicked, setIsClicked] = useState(null);
@@ -68,14 +72,12 @@ function Header() {
 
   const navigate = useNavigate();
 
-  // Backend base URL from environment variable
   const backendBaseURL = process.env.REACT_APP_BACKEND_URL;
 
-  // Check if the user is logged in by checking for a token
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) {
-      navigate('/'); // Redirect to the homepage if no token is found
+      navigate('/');
     }
   }, [navigate]);
 
@@ -93,18 +95,17 @@ function Header() {
 
     const config = {
       headers: {
-        Authorization: `Bearer ${token}`, // Send token for backend authentication
+        Authorization: `Bearer ${token}`,
       },
     };
 
-    // Use environment variable instead of hardcoded URL
     axios
       .post(`${backendBaseURL}/logout`, {}, config)
       .then((response) => {
         if (response) {
-          localStorage.removeItem('token'); // Remove the token from localStorage
-          sessionStorage.clear(); // Clear session storage, if used
-          navigate('/'); // Redirect to homepage after logging out
+          localStorage.removeItem('token');
+          sessionStorage.clear();
+          navigate('/');
         }
       })
       .catch((error) => {
