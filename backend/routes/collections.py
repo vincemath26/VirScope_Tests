@@ -9,9 +9,33 @@ from datetime import datetime
 from routes.auth import jwt_required
 from utils.collections import allowed_file, get_user_upload
 from utils.r2 import r2_client, upload_file_to_r2, download_file_from_r2, delete_file_from_r2
+from botocore.exceptions import ClientError
 
 collection_bp = Blueprint('collection', __name__)
 ALLOWED_EXTENSIONS = {'csv'}
+
+def generate_unique_filename(bucket_name, filename):
+    base, ext = os.path.splitext(filename)
+    counter = 1
+    unique_filename = filename
+
+    while True:
+        try:
+            # Check if object exists
+            r2_client.head_object(Bucket=bucket_name, Key=unique_filename)
+
+            # If no exception, file exists -> generate new name
+            unique_filename = f"{base} ({counter}){ext}"
+            counter += 1
+
+        except ClientError as e:
+            # If the object doesn't exist, we can use this name
+            if e.response['Error']['Code'] == "404":
+                break
+            else:
+                raise e
+            
+    return unique_filename
 
 # -----------------------
 # Upload a new file
@@ -42,6 +66,8 @@ def upload_file():
 
         try:
             bucket = os.environ.get('R2_BUCKET_NAME')
+            # Generate a unique filename if it already exists
+            name_with_ext = generate_unique_filename(bucket, name_with_ext)
             file.seek(0)
             upload_file_to_r2(r2_client, bucket, file, name_with_ext)
         except Exception as e:
@@ -61,7 +87,6 @@ def upload_file():
         return jsonify({"message": "File uploaded successfully", "upload_id": upload_id}), 201
 
     return jsonify({"error": "File type not allowed"}), 400
-
 
 # -----------------------
 # Replace an upload
@@ -86,31 +111,33 @@ def replace_upload(upload_id):
         if not upload:
             return jsonify({"error": "Forbidden"}), 403
 
-        # Determine the new filename
+        # Determine filename
         name_with_ext = secure_filename(custom_name) if custom_name else secure_filename(file.filename)
         if not name_with_ext.lower().endswith('.csv'):
             name_with_ext += '.csv'
 
         try:
             bucket = os.environ.get('R2_BUCKET_NAME')
-            # Upload new file
+            # Generate unique filename to avoid overwriting others
+            unique_name = generate_unique_filename(bucket, name_with_ext)
+
             file.seek(0)
-            upload_file_to_r2(r2_client, bucket, file, name_with_ext)
-            
-            # Only delete the old file if the name is different
-            if upload.name != name_with_ext:
+            upload_file_to_r2(r2_client, bucket, file, unique_name)
+
+            # Delete only the old file of this upload
+            if upload.name != unique_name:
                 delete_file_from_r2(r2_client, bucket, upload.name)
         except Exception as e:
             return jsonify({"error": f"Failed to replace file in R2: {e}"}), 500
 
         # Update DB record
-        upload.name = name_with_ext
+        upload.name = unique_name
         if file_type:
             upload.file_type = file_type
         upload.date_modified = datetime.utcnow()
         session.commit()
 
-    return jsonify({"message": "Upload replaced successfully", "new_name": name_with_ext})
+    return jsonify({"message": "Upload replaced successfully", "new_name": unique_name})
 
 # -----------------------
 # Get single upload
